@@ -22353,7 +22353,7 @@ var demoTrace = { "code": "def listSum(numbers):\n  if not numbers:\n    return 
 $(document).ready(function () {
     $("#cp-thumbnail").attr('src', __webpack_require__(72));
     var demoViz = new pytutor_1.ExecutionVisualizer('demoViz', demoTrace, { embeddedMode: true,
-        lang: 'py2',
+        lang: 'py3',
         startingInstruction: 10,
         editCodeBaseURL: 'visualize.html' });
     // redraw connector arrows on window resize
