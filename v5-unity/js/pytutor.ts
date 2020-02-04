@@ -20,6 +20,9 @@
   visualization embedded within a webpage, due to multiple matches in
   the global namespace.
 
+  By doing myViz.domRoot / .domRootD3, you're guaranteed to select DOM elements
+  within the current ExecutionVisualizer object
+
 - always use generateID and generateHeapObjID to generate unique CSS
   IDs, or else things will break when multiple ExecutionVisualizer
   instances are on a webpage
@@ -2575,18 +2578,19 @@ class DataVisualizer {
       highlight_frame(myViz.owner.generateID('globals'));
     }
 
-    // use jQuery UI's draggable to instantly make all heap objects draggable :)
+    // use jQueryUI's draggable to make all heap objects contained within
+    // YOURSELF draggable (subtle: don't do '.heapObject' since that may select
+    // heap objects belonging to OTHER ExecutionVisualizer objects on page!)
     // TODO: save their dragged positions so that we can restore them when
     // displaying different steps
-    $('.heapObject').draggable({
+    myViz.domRoot.find('.heapObject')
+      .css('cursor', 'pointer') // make the cursor a hand when you hover over it
+      .draggable({
         drag: () => {
-          //myViz.redrawConnectors(); // redraw all arrows whenever you drag!
-          //console.log('drag called!'); // to make sure we're not adding too many callbacks
-
           // debounce to prevent excessive repaints, which can get super-slow
-          $.doTimeout('heapObjectDrag', 10 /* milliseconds */, () => {
-            myViz.redrawConnectors(); // redraw all arrows whenever you drag!
+          $.doTimeout('heapObjectDrag', 10, () => { // pass in milliseconds
             console.log('draggable DRAG'); // to make sure we're not adding too many callbacks
+            myViz.redrawConnectors(); // redraw all arrows whenever you drag!
           });
         },
 
@@ -2595,8 +2599,8 @@ class DataVisualizer {
         },
 
         stop: () => {
-          myViz.redrawConnectors(); // redraw all arrows whenever you drag!
           console.log('draggable STOP'); // to make sure we're not adding too many callbacks
+          myViz.redrawConnectors(); // redraw all arrows whenever you drag!
         },
     });
 
