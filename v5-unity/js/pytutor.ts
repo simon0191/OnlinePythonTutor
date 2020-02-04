@@ -2361,7 +2361,8 @@ class DataVisualizer {
 
         var srcAnchorObject = myViz.domRoot.find('#' + srcID);
         var srcHeapObject = srcAnchorObject.closest('.heapObject');
-        var dstHeapObject = myViz.domRoot.find('#' + dstID);
+        var dstAnchorObject = myViz.domRoot.find('#' + dstID);
+        var dstHeapObject = dstAnchorObject.closest('.heapObject');
         assert(dstHeapObject.attr('class') == 'heapObject');
 
         var srcHeapRow = srcHeapObject.closest('.heapRow');
@@ -2531,7 +2532,8 @@ class DataVisualizer {
           // else unhighlight it
           // (only if c.source actually belongs to a stackFrameDiv (i.e.,
           //  it originated from the stack). for instance, in C there are
-          //  heap pointers, but we doen't use heapConnectionEndpointIDs)
+          //  heap pointers, but we doesn't use heapConnectionEndpointIDs
+          //  NB: 2020-02-04 - upgraded C/C++ to use heapConnectionEndpointIDs )
           c.setPaintStyle({lineWidth:1, strokeStyle: connectorInactiveColor});
           c.endpoints[0].setPaintStyle({fillStyle: connectorInactiveColor});
           //c.endpoints[1].setVisible(false, true, true); // JUST set right endpoint to be invisible
@@ -2652,6 +2654,21 @@ class DataVisualizer {
             //console.log(ptrSrcId, '->', ptrTargetId);
             assert(!myViz.jsPlumbManager.connectionEndpointIDs.has(ptrSrcId));
             myViz.jsPlumbManager.connectionEndpointIDs.set(ptrSrcId, ptrTargetId);
+
+            // note that we can't tell whether ptrSrcId or ptrTargetId
+            // are on the stack or heap (since the C trace allows pointer
+            // objects to exist in both), so a hack to find out is to find
+            // its DOM element, look upward in tree for closest heapObject,
+            // and if we find it, then we assume it's on the heap
+            var srcAnchorObject = myViz.domRoot.find('#' + ptrSrcId);
+            var dstAnchorObject = myViz.domRoot.find('#' + ptrTargetId);
+            var srcHeapObject = srcAnchorObject.closest('.heapObject');
+            var dstHeapObject = dstAnchorObject.closest('.heapObject');
+
+            // only do this if BOTH ptrSrcId and ptrTargetId are on the heap
+            if (srcHeapObject.length > 0 && dstHeapObject.length > 0) {
+              myViz.jsPlumbManager.heapConnectionEndpointIDs.set(ptrSrcId, ptrTargetId);
+            }
           }
         } else {
           // for non-pointers, put cdataId on the element itself, so that
@@ -2660,7 +2677,7 @@ class DataVisualizer {
 
           var rep = '';
           if (typeof obj[3] === 'string') {
-            var literalStr = obj[3];
+            var literalStr = (obj[3] as any);
             if (literalStr === '<UNINITIALIZED>') {
               rep = '<span class="cdataUninit">?</span>';
               //rep = '\uD83D\uDCA9'; // pile of poo emoji
