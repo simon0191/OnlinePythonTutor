@@ -33,6 +33,7 @@ require('./lib/jquery.jsPlumb-1.3.10-all-min.js'); // DO NOT UPGRADE ABOVE 1.3.1
 require('./lib/jquery-ui-1.11.4/jquery-ui.js');
 require('./lib/jquery-ui-1.11.4/jquery-ui.css');
 require('./lib/jquery.ba-bbq.js'); // contains slight pgbovine modifications
+require('./lib/jquery.ba-dotimeout.min.js'); // for $.doTimeout
 require('../css/pytutor');
 
 import {unsupportedFeaturesStr} from './footer-html';
@@ -1194,6 +1195,13 @@ class DataVisualizer {
       EndpointStyles: [{fillStyle: connectorBaseColor}, {fillstyle: null} /* make right endpoint invisible */],
       Anchors: ["RightMiddle", "LeftMiddle"],
       PaintStyle: {lineWidth:1, strokeStyle: connectorBaseColor},
+
+      // From: http://jsplumb.github.io/jsplumb/home.html#container
+      // "It is strongly recommended that you set a Container before you begin plumbing."
+      // - if you don't do this, then jsplumb arrow elements will live next to
+      //   the elements that anchor them, which INTERACTS REALLY REALLY BADLY
+      //   with jQuery draggable in weird ways. so set this.domRoot as container
+      Container: this.domRoot,
 
       // bezier curve style:
       //Connector: [ "Bezier", { curviness:15 }], /* too much 'curviness' causes lines to run together */
@@ -2369,7 +2377,6 @@ class DataVisualizer {
         var srcHeapObject = srcAnchorObject.closest('.heapObject');
         var dstAnchorObject = myViz.domRoot.find('#' + dstID);
         var dstHeapObject = dstAnchorObject.closest('.heapObject');
-        assert(dstHeapObject.attr('class') == 'heapObject');
 
         var srcHeapRow = srcHeapObject.closest('.heapRow');
         var dstHeapRow = dstHeapObject.closest('.heapRow');
@@ -2567,6 +2574,31 @@ class DataVisualizer {
     if (!frame_already_highlighted) {
       highlight_frame(myViz.owner.generateID('globals'));
     }
+
+    // use jQuery UI's draggable to instantly make all heap objects draggable :)
+    // TODO: save their dragged positions so that we can restore them when
+    // displaying different steps
+    $('.heapObject').draggable({
+        drag: () => {
+          //myViz.redrawConnectors(); // redraw all arrows whenever you drag!
+          //console.log('drag called!'); // to make sure we're not adding too many callbacks
+
+          // debounce to prevent excessive repaints, which can get super-slow
+          $.doTimeout('heapObjectDrag', 10 /* milliseconds */, () => {
+            myViz.redrawConnectors(); // redraw all arrows whenever you drag!
+            console.log('draggable DRAG'); // to make sure we're not adding too many callbacks
+          });
+        },
+
+        start: () => {
+          console.log('draggable START'); // to make sure we're not adding too many callbacks
+        },
+
+        stop: () => {
+          myViz.redrawConnectors(); // redraw all arrows whenever you drag!
+          console.log('draggable STOP'); // to make sure we're not adding too many callbacks
+        },
+    });
 
     myViz.owner.try_hook("end_renderDataStructures", {myViz:myViz.owner /* tricky! use owner to be safe */});
   }
@@ -2789,6 +2821,7 @@ class DataVisualizer {
 
     // wrap ALL compound objects in a heapObject div so that jsPlumb
     // connectors can point to it:
+    // TODO: what about C/C++ objects on the stack that are the target of pointers?
     d3DomElement.append('<div class="heapObject" id="' + heapObjID + '"></div>');
     d3DomElement = myViz.domRoot.find('#' + heapObjID); // TODO: maybe inefficient
 
