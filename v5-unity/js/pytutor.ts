@@ -1199,7 +1199,13 @@ class DataVisualizer {
       //Connector: [ "Bezier", { curviness:15 }], /* too much 'curviness' causes lines to run together */
       //Overlays: [[ "Arrow", { length: 14, width:10, foldback:0.55, location:0.35 }]],
 
-      // state machine curve style:
+      // https://docs.jsplumbtoolkit.com/toolkit/current/articles/connectors.html
+      // TODO: let the user select between Bezier and StateMachine, and
+      // set curviness with a slider (StateMachine defaults to 10,
+      // Bezier defaults to 150)
+      //Connector: [ "Bezier", {curviness: 250} ],
+      //Connector: [ "Bezier", {curviness: 50} ],
+      //Connector: [ "StateMachine", {curviness: 50} ],
       Connector: [ "StateMachine" ],
       Overlays: [[ "Arrow", { length: 10, width:7, foldback:0.55, location:1 }]],
       EndpointHoverStyles: [{fillStyle: connectorHighlightColor}, {fillstyle: null} /* make right endpoint invisible */],
