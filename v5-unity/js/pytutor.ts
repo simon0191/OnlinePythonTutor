@@ -3719,6 +3719,7 @@ class NavigationController {
   nSteps: number;
 
   constructor(owner, domRoot, domRootD3, nSteps) {
+    let myself = this;
     this.owner = owner;
     this.domRoot = domRoot;
     this.domRootD3 = domRootD3;
@@ -3740,6 +3741,7 @@ class NavigationController {
                        <button id="raw_input_submit_btn">Submit</button>\
                      </div>\
                      <div id="errorOutput"/>\
+                     <div id="uiControlsPane"><a id="customizeVizLink" href="#">Customize visualization</a></div>\
                    </div>';
 
     this.domRoot.append(navHTML);
@@ -3761,6 +3763,122 @@ class NavigationController {
       var userInput = ruiDiv.find('#raw_input_textbox').val();
       // advance instruction count by 1 to get to the NEXT instruction
       this.owner.params.executeCodeWithRawInputFunc(userInput, this.owner.curInstr + 1);
+    });
+
+
+    // create visualizer UI controls
+    let uiControlsPane = this.domRoot.find("#uiControlsPane");
+    uiControlsPane.find("#customizeVizLink").click(() => {
+      // expose more of the UI on-demand
+
+      uiControlsPane.append(' \
+        <div style="margin-top: 8px;"/>\
+          (WARNING: if you dragged objects elsewhere, you will LOSE those custom positions: TODO: figure out how to save/restore custom object positions)<br/>\
+          Pointer style:\
+          <select id="jsplumbConnectorType">\
+            <option value="StateMachine" selected>Default</option>\
+            <option value="Bezier">Bezier</option>\
+            <option value="Straight">Straight</option>\
+            <option value="Flowchart">Flowchart</option>\
+          </select>\
+          <div class="sliderWrapper">Curve: <input type="range" min="0" max="100" value="10" class="jsplumbOptionSlider" id="smCurviness"><span class="sliderVal">10</span></div>\
+          <div class="sliderWrapper">Curve: <input type="range" min="0" max="500" value="150" class="jsplumbOptionSlider" id="bezierCurviness"><span class="sliderVal">150</span></div>\
+          <div class="sliderWrapper">Margin: <input type="range" min="0" max="20" value="5" class="jsplumbOptionSlider" id="margin"><span class="sliderVal">5</span></div>\
+          <div class="sliderWrapper">Stub: <input type="range" min="0" max="50" value="0" class="jsplumbOptionSlider" id="stub"><span class="sliderVal">0</span></div>\
+          <div class="sliderWrapper">Gap: <input type="range" min="0" max="50" value="0" class="jsplumbOptionSlider" id="gap"><span class="sliderVal">0</span></div>\
+          <div class="sliderWrapper">Midpoint: <input type="range" min="0" max="10" value="0.5" step="0.5" class="jsplumbOptionSlider" id="midpoint"><span class="sliderVal">0.5</span></div>\
+          <div class="sliderWrapper">CornerRadius: <input type="range" min="0" max="10" value="0" class="jsplumbOptionSlider" id="cornerRadius"><span class="sliderVal">0</span></div>\
+          <br/>\
+        </div>\
+      ');
+
+      // when any slider is moved, redraw all the jsPlumb connectors
+      // with the new options
+      uiControlsPane.find('.jsplumbOptionSlider').each((i, e) => {
+        e.oninput = function() {
+          $(e).siblings('.sliderVal').html(this.value);
+          let connectorType = uiControlsPane.find('#jsplumbConnectorType').val();
+          if (connectorType === "StateMachine") {
+            let curviness = uiControlsPane.find('#smCurviness').val();
+            let margin = uiControlsPane.find('#margin').val()
+            console.log(connectorType, curviness, margin);
+
+            myself.owner.dataViz.jsPlumbInstance.importDefaults({
+              Connector: [connectorType, {curviness: curviness, margin: margin}]
+            });
+            myself.owner.dataViz.renderDataStructures(myself.owner.curInstr); // UGLY!
+          } else if (connectorType === "Bezier") {
+            let curviness = uiControlsPane.find('#bezierCurviness').val();
+            console.log(connectorType, curviness);
+
+            // create a new jsPlumb instance
+            myself.owner.dataViz.jsPlumbInstance.importDefaults({
+              Connector: [connectorType, {curviness: curviness}]
+            });
+            myself.owner.dataViz.renderDataStructures(myself.owner.curInstr); // UGLY!
+          } else if (connectorType === "Straight") {
+            let stub = uiControlsPane.find('#stub').val();
+            let gap = uiControlsPane.find('#gap').val();
+            console.log(connectorType, stub, gap);
+
+            myself.owner.dataViz.jsPlumbInstance.importDefaults({
+              Connector: [connectorType, {stub: stub, gap: gap}]
+            });
+            myself.owner.dataViz.renderDataStructures(myself.owner.curInstr); // UGLY!
+          } else {
+            assert(connectorType === "Flowchart");
+            let stub = uiControlsPane.find('#stub').val();
+            let gap = uiControlsPane.find('#gap').val();
+            let midpoint = uiControlsPane.find('#midpoint').val();
+            let cornerRadius = uiControlsPane.find('#cornerRadius').val();
+            console.log(connectorType, stub, gap, midpoint, cornerRadius);
+
+            myself.owner.dataViz.jsPlumbInstance.importDefaults({
+              // stub seems to be bogus and result in errors :(
+              Connector: [connectorType, {gap: gap, midpoint: midpoint, cornerRadius: cornerRadius}]
+            });
+            myself.owner.dataViz.renderDataStructures(myself.owner.curInstr); // UGLY!
+          }
+        }
+      });
+
+      // show certain sliders depending on value of jsplumbConnectorType
+      // use this as a reference:
+      // https://community.jsplumbtoolkit.com/doc/connectors.html
+      uiControlsPane.find('#jsplumbConnectorType').change(function() {
+        let v = $(this).val();
+        console.log(v);
+        if (v === "StateMachine") {
+          uiControlsPane.find('.sliderWrapper').hide();
+          uiControlsPane.find('#smCurviness').parent('.sliderWrapper').show();
+          uiControlsPane.find('#margin').parent('.sliderWrapper').show();
+        } else if (v === "Bezier") {
+          uiControlsPane.find('.sliderWrapper').hide();
+          uiControlsPane.find('#bezierCurviness').parent('.sliderWrapper').show();
+        } else if (v === "Straight") {
+          uiControlsPane.find('.sliderWrapper').hide();
+          uiControlsPane.find('#stub').val(0).siblings('.sliderVal').html(0); // set default
+          uiControlsPane.find('#stub').parent('.sliderWrapper').show();
+          uiControlsPane.find('#gap').parent('.sliderWrapper').show();
+        } else {
+          assert(v === "Flowchart");
+          uiControlsPane.find('.sliderWrapper').hide();
+          /* stub seems to be bogus and result in errors
+          uiControlsPane.find('#stub').val(30).siblings('.sliderVal').html(30); // set default
+          uiControlsPane.find('#stub').parent('.sliderWrapper').show();
+          */
+          uiControlsPane.find('#gap').parent('.sliderWrapper').show();
+          uiControlsPane.find('#midpoint').parent('.sliderWrapper').show();
+          uiControlsPane.find('#cornerRadius').parent('.sliderWrapper').show();
+        }
+      }).val('StateMachine').change(); // <-- trigger a change event on this initial setting to get the change handler above to run
+
+      // set default, which is StateMachine:
+      //uiControlsPane.find('.sliderWrapper').hide();
+      //uiControlsPane.find('#smCurviness').parent('.sliderWrapper').show();
+      //uiControlsPane.find('#margin').parent('.sliderWrapper').show();
+
+      return false; // don't follow the link and reload the page!
     });
   }
 
