@@ -1221,8 +1221,17 @@ class DataVisualizer {
   // create a unique CSS ID for a heap object, which should include both
   // its ID and the current step number. this is necessary if we want to
   // display the same heap object at multiple execution steps.
+  //
+  // 2020-02-05: why do we need stepNum in the ID? what happens if we
+  // remove it? it may be more convenient if we remove it since we can
+  // then track the state of the same object across multiple execution steps
+  // such as its location (if the user dragged it to a custom location)
+  // or whether it's hidden or not, since it will have the same CSS ID
+  // when it's being rendered at different execution steps. what might go wrong?
   generateHeapObjID(objID, stepNum) {
-    return this.owner.generateID('heap_object_' + objID + '_s' + stepNum);
+    // 2020-02-05 - remove stepNum from returned CSS ID and see what happens:
+    //return this.owner.generateID('heap_object_' + objID + '_s' + stepNum);
+    return this.owner.generateID('heap_object_' + objID);
   }
 
   // customize labels for each language's preferred vocabulary
@@ -1886,7 +1895,7 @@ class DataVisualizer {
     // insert a new toplevelHeapObject
     var tlhEnter = toplevelHeapObjects.enter().append('td')
       .attr('class', 'toplevelHeapObject')
-      .attr('id', function(d, i) {return 'toplevel_heap_object_' + d;});
+      .attr('id', function(d, i) {return 'toplevel_heap_object_' + d;}); // TODO: is this CSS ID unique?
 
     // remember that the enter selection is added to the update
     // selection so that we can process it later ...
@@ -2568,30 +2577,48 @@ class DataVisualizer {
       highlight_frame(myViz.owner.generateID('globals'));
     }
 
-    // use jQueryUI's draggable to make all heap objects contained within
-    // YOURSELF draggable (subtle: don't do '.heapObject' since that may select
-    // heap objects belonging to OTHER ExecutionVisualizer objects on page!)
-    // TODO: save their dragged positions so that we can restore them when
-    // displaying different steps
-    myViz.domRoot.find('.heapObject')
-      .css('cursor', 'pointer') // make the cursor a hand when you hover over it
-      .draggable({
-        drag: () => {
-          // debounce to prevent excessive repaints, which can get super-slow
-          $.doTimeout('heapObjectDrag', 10, () => { // pass in milliseconds
-            console.log('draggable DRAG'); // to make sure we're not adding too many callbacks
+    console.log('===');
+
+    // use jQueryUI's draggable to make all heap objects contained
+    // within YOURSELF draggable (NB: use myViz.domRoot.find() and *not*
+    // $() since the latter may select heap objects belonging to OTHER
+    // ExecutionVisualizer objects on page!)
+    myViz.domRoot.find('.heapObject').each((i, e) => {
+      // very subtle: if this is a .heapObject that's *nested* within
+      // another one, then don't make it draggable, since it's weird to
+      // be able to drag a nested object inside of its parent object; in
+      // other words, we want to drag only .toplevelHeapObject, but it's
+      // cleaner to make the .heapObject element draggable and not the
+      // .toplevelHeapObject element
+      //
+      // note that this code may break if we're nesting an entire
+      // ExecutionVisualizer instance inside the .heapObject of another
+      // ExecutionVisualizer so that every .heapObject in the inner one is
+      // actually in the outer one, but i don't see who would actually do that!
+      if ($(e).parents('.heapObject').length) {
+        return;
+      }
+
+      console.log(e);
+      $(e).css('cursor', 'pointer') // make the cursor a hand when you hover over it
+        .draggable({
+          drag: () => {
+            // debounce to prevent excessive repaints, which can get super-slow
+            $.doTimeout('heapObjectDrag', 10, () => { // pass in milliseconds
+              console.log('draggable DRAG'); // to make sure we're not adding too many callbacks
+              myViz.redrawConnectors(); // redraw all arrows whenever you drag!
+            });
+          },
+
+          start: () => {
+            console.log('draggable START'); // to make sure we're not adding too many callbacks
+          },
+
+          stop: () => {
+            console.log('draggable STOP'); // to make sure we're not adding too many callbacks
             myViz.redrawConnectors(); // redraw all arrows whenever you drag!
-          });
-        },
-
-        start: () => {
-          console.log('draggable START'); // to make sure we're not adding too many callbacks
-        },
-
-        stop: () => {
-          console.log('draggable STOP'); // to make sure we're not adding too many callbacks
-          myViz.redrawConnectors(); // redraw all arrows whenever you drag!
-        },
+          },
+        });
     });
 
     myViz.owner.try_hook("end_renderDataStructures", {myViz:myViz.owner /* tricky! use owner to be safe */});
@@ -2977,6 +3004,12 @@ class DataVisualizer {
       // CLUTTER UP the display with a ton of attributes, especially
       // from imported modules and custom types created from, say,
       // collections.namedtuple
+      //
+      // TODO: make this a more general mechanism by which anything can
+      // be toggled hidden! one idea is to use a hidden data- field in
+      // each .heapObject to store its attribute toggle status, so that
+      // we can restore it when we re-render this object at other
+      // execution steps
       if (!isInstance) {
         var className = obj[1];
         d3DomElement.find('.typeLabel #attrToggleLink').click(function() {
