@@ -3792,6 +3792,11 @@ class NavigationController {
         </div>\
       ');
 
+      // note that many of these options aren't present in the OLD OLD
+      // OLD version of ./lib/jquery.jsPlumb-1.3.10-all-min.js that
+      // we're using, so they might not do anything when they're
+      // triggered. look at the inline comments/documentation in the source code
+      // here for details: lib/jsplumb-1.3.10.zip
       function rerenderJsPlumbConnectors() {
         let connectorType = uiControlsPane.find('#jsplumbConnectorType').val();
         if (connectorType === "StateMachine") {
