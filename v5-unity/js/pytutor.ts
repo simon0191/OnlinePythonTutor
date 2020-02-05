@@ -447,11 +447,9 @@ export class ExecutionVisualizer {
 
       // add an extra label to link back to the main site, so that viewers
       // on the embedded page know that they're seeing an OPT visualization
-      base.append('<div style="font-size: 8pt; margin-bottom: 10px;"><a href="http://pythontutor.com/" target="_blank" style="color: #3D58A2;">Python Tutor</a> by <a href="http://pgbovine.net/" target="_blank" style="color: #3D58A2;">Philip Guo</a></div>');
+      base.find('#creditsPane').html('<div style="font-size: 8pt; margin-top: 5px; margin-bottom: 5px;"><a href="http://pythontutor.com/" target="_blank" style="color: #3D58A2;">Python Tutor</a> by <a href="http://pgbovine.net/" target="_blank" style="color: #3D58A2;">Philip Guo</a></div>');
       base.find('#codeFooterDocs').hide(); // cut out extraneous docs
     } else {
-      // also display credits: nevermind
-      //base.append('<div style="font-size: 9pt; margin-top: 5px; margin-bottom: 10px;">Created by <a href="https://twitter.com/pgbovine" target="_blank">@pgbovine</a></div>');
     }
 
     // not enough room for these extra buttons ...
@@ -3709,6 +3707,7 @@ class NavigationController {
   domRoot: any;
   domRootD3: any;
   nSteps: number;
+  customizeVizOptionsShown: boolean;
 
   constructor(owner, domRoot, domRootD3, nSteps) {
     let myself = this;
@@ -3716,6 +3715,7 @@ class NavigationController {
     this.domRoot = domRoot;
     this.domRootD3 = domRootD3;
     this.nSteps = nSteps;
+    this.customizeVizOptionsShown = false;
 
     var navHTML = '<div id="navControlsDiv">\
                      <div id="executionSlider"/>\
@@ -3733,6 +3733,7 @@ class NavigationController {
                        <button id="raw_input_submit_btn">Submit</button>\
                      </div>\
                      <div id="errorOutput"/>\
+                     <div id="creditsPane"></div>\
                      <div id="uiControlsPane"><a id="customizeVizLink" href="#">Customize visualization</a></div>\
                    </div>';
 
@@ -3758,10 +3759,14 @@ class NavigationController {
     });
 
 
-    // create visualizer UI controls
+    // create customize visualization UI
     let uiControlsPane = this.domRoot.find("#uiControlsPane");
+
+    // expose the customization UI
     uiControlsPane.find("#customizeVizLink").click(() => {
-      // expose more of the UI on-demand
+      if (this.customizeVizOptionsShown) {
+        return;
+      }
 
       uiControlsPane.append(' \
         <div style="margin-top: 8px;"/>\
@@ -3878,6 +3883,7 @@ class NavigationController {
                                        // initial setting to get the change
                                        // handler above to run
 
+      this.customizeVizOptionsShown = true;
       return false; // don't follow the link and reload the page!
     });
   }
