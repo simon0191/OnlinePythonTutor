@@ -1206,19 +1206,11 @@ class DataVisualizer {
       //   with jQuery draggable in weird ways. so set this.domRoot as container
       Container: this.domRoot,
 
-      // bezier curve style:
-      //Connector: [ "Bezier", { curviness:15 }], /* too much 'curviness' causes lines to run together */
-      //Overlays: [[ "Arrow", { length: 14, width:10, foldback:0.55, location:0.35 }]],
-
+      // note that this documentation covers a newer version of jsPlumb, and
+      // we're still on a super-old jsPlumb-1.3.10 in lib/
       // https://docs.jsplumbtoolkit.com/toolkit/current/articles/connectors.html
-      // TODO: let the user select between Bezier and StateMachine, and
-      // set curviness with a slider (StateMachine defaults to 10,
-      // Bezier defaults to 150)
-      //Connector: [ "Bezier", {curviness: 250} ],
-      //Connector: [ "Bezier", {curviness: 50} ],
-      //Connector: [ "StateMachine", {curviness: 50} ],
       Connector: [ "StateMachine" ],
-      Overlays: [[ "Arrow", { length: 10, width:7, foldback:0.55, location:1 }]],
+      Overlays: [[ "Arrow", { length: 10, width:7, foldback:0.55, location:1 /* 1 = display at target */ }]],
       EndpointHoverStyles: [{fillStyle: connectorHighlightColor}, {fillstyle: null} /* make right endpoint invisible */],
       HoverPaintStyle: {lineWidth: 1, strokeStyle: connectorHighlightColor},
     });
@@ -3773,7 +3765,11 @@ class NavigationController {
 
       uiControlsPane.append(' \
         <div style="margin-top: 8px;"/>\
-          (WARNING: if you dragged objects elsewhere, you will LOSE those custom positions: TODO: figure out how to save/restore custom object positions)<br/>\
+          (you can drag heap objects to move them, but they won\'t be saved or synced with others)<br/>\
+          <div class="sliderWrapper">Arrow length: <input type="range" min="1" max="30" value="10" class="jsplumbOptionSlider" id="arrowLength"><span class="sliderVal">10</span></div>\
+          <div class="sliderWrapper">Arrow width: <input type="range" min="1" max="30" value="7" class="jsplumbOptionSlider" id="arrowWidth"><span class="sliderVal">7</span></div>\
+          <div class="sliderWrapper">Arrow fold: <input type="range" min="0" max="1" value="0.55" step="0.05" class="jsplumbOptionSlider" id="arrowFoldback"><span class="sliderVal">0.55</span></div>\
+          <div style="margin-top: 10px;">\
           Pointer style:\
           <select id="jsplumbConnectorType">\
             <option value="StateMachine" selected>Default</option>\
@@ -3781,6 +3777,7 @@ class NavigationController {
             <option value="Straight">Straight</option>\
             <option value="Flowchart">Flowchart</option>\
           </select>\
+          </div>\
           <div class="sliderWrapper">Curve: <input type="range" min="0" max="100" value="10" class="jsplumbOptionSlider" id="smCurviness"><span class="sliderVal">10</span></div>\
           <div class="sliderWrapper">Curve: <input type="range" min="0" max="500" value="150" class="jsplumbOptionSlider" id="bezierCurviness"><span class="sliderVal">150</span></div>\
           <div class="sliderWrapper">Margin: <input type="range" min="0" max="20" value="5" class="jsplumbOptionSlider" id="margin"><span class="sliderVal">5</span></div>\
@@ -3799,40 +3796,36 @@ class NavigationController {
       // here for details: lib/jsplumb-1.3.10.zip
       function rerenderJsPlumbConnectors() {
         let connectorType = uiControlsPane.find('#jsplumbConnectorType').val();
+        let connectorSpec = null;
         if (connectorType === "StateMachine") {
           let curviness = uiControlsPane.find('#smCurviness').val();
-          let margin = uiControlsPane.find('#margin').val()
-          console.log(connectorType, curviness, margin);
-          myself.owner.dataViz.jsPlumbInstance.importDefaults({
-            Connector: [connectorType, {curviness: curviness, margin: margin}]
-          });
+          connectorSpec = [connectorType, {curviness: curviness}]; // margin seems to have no effect
         } else if (connectorType === "Bezier") {
           let curviness = uiControlsPane.find('#bezierCurviness').val();
-          console.log(connectorType, curviness);
-          myself.owner.dataViz.jsPlumbInstance.importDefaults({
-            Connector: [connectorType, {curviness: curviness}]
-          });
+          connectorSpec = [connectorType, {curviness: curviness}]
         } else if (connectorType === "Straight") {
-          let stub = uiControlsPane.find('#stub').val();
-          let gap = uiControlsPane.find('#gap').val();
-          console.log(connectorType, stub, gap);
-          myself.owner.dataViz.jsPlumbInstance.importDefaults({
-            Connector: [connectorType, {stub: stub, gap: gap}]
-          });
+          connectorSpec = [connectorType]; // stub and gap seem to have no effect
         } else {
           assert(connectorType === "Flowchart");
-          let stub = uiControlsPane.find('#stub').val();
+          // stub, midpoint, and radius seem to have no effect (actually
+          // stub causes crashes, ergh)
           let gap = uiControlsPane.find('#gap').val();
-          let midpoint = uiControlsPane.find('#midpoint').val();
-          let cornerRadius = uiControlsPane.find('#cornerRadius').val();
-          console.log(connectorType, stub, gap, midpoint, cornerRadius);
-          myself.owner.dataViz.jsPlumbInstance.importDefaults({
-            // stub seems to be bogus and results in errors :(
-            Connector: [connectorType, {gap: gap, midpoint: midpoint, cornerRadius: cornerRadius}]
-          });
+          connectorSpec = [connectorType, {gap: gap}];
         }
 
-        myself.owner.dataViz.renderDataStructures(myself.owner.curInstr); // UGLY!
+        if (connectorSpec) {
+          myself.owner.dataViz.jsPlumbInstance.importDefaults({
+            Connector: connectorSpec,
+            Overlays: [[ "Arrow", {length: uiControlsPane.find('#arrowLength').val(),
+                                   width: uiControlsPane.find('#arrowWidth').val(),
+                                   foldback: uiControlsPane.find('#arrowFoldback').val(),
+                                   location: 1 // always 1, which means to display at target
+                                 }
+                      ]],
+          });
+
+          myself.owner.dataViz.renderDataStructures(myself.owner.curInstr); // UGLY!
+        }
       }
 
       // when any slider is moved, update its numeric display and then
@@ -3849,33 +3842,38 @@ class NavigationController {
       // https://community.jsplumbtoolkit.com/doc/connectors.html
       uiControlsPane.find('#jsplumbConnectorType').change(function() {
         let v = $(this).val();
-        console.log(v);
+        uiControlsPane.find('.sliderWrapper').hide();
+
         if (v === "StateMachine") {
-          uiControlsPane.find('.sliderWrapper').hide();
           uiControlsPane.find('#smCurviness').parent('.sliderWrapper').show();
+          /* margin seems to have no effect ...
           uiControlsPane.find('#margin').parent('.sliderWrapper').show();
+          */
         } else if (v === "Bezier") {
-          uiControlsPane.find('.sliderWrapper').hide();
           uiControlsPane.find('#bezierCurviness').parent('.sliderWrapper').show();
         } else if (v === "Straight") {
-          uiControlsPane.find('.sliderWrapper').hide();
+          /* neither stub nor gap seem to have any effect :/
           uiControlsPane.find('#stub').val(0).siblings('.sliderVal').html(0); // set default
           uiControlsPane.find('#stub').parent('.sliderWrapper').show();
           uiControlsPane.find('#gap').parent('.sliderWrapper').show();
+          */
         } else {
           assert(v === "Flowchart");
-          uiControlsPane.find('.sliderWrapper').hide();
           /* stub seems to be bogus and result in errors
           uiControlsPane.find('#stub').val(30).siblings('.sliderVal').html(30); // set default
           uiControlsPane.find('#stub').parent('.sliderWrapper').show();
-          */
-          uiControlsPane.find('#gap').parent('.sliderWrapper').show();
+
+          // midpoint and cornerRadius seem equally useless
           uiControlsPane.find('#midpoint').parent('.sliderWrapper').show();
           uiControlsPane.find('#cornerRadius').parent('.sliderWrapper').show();
+          */
+          uiControlsPane.find('#gap').parent('.sliderWrapper').show();
         }
 
-        rerenderJsPlumbConnectors();
+        // always show arrow stuff
+        uiControlsPane.find('#arrowLength,#arrowWidth,#arrowFoldback').parent('.sliderWrapper').show();
 
+        rerenderJsPlumbConnectors(); // re-render based on new connector type choice
       }).val('StateMachine').change(); // <-- trigger a change event on this
                                        // initial setting to get the change
                                        // handler above to run
