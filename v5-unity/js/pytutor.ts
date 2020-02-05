@@ -3792,53 +3792,50 @@ class NavigationController {
         </div>\
       ');
 
-      // when any slider is moved, redraw all the jsPlumb connectors
-      // with the new options
+      function rerenderJsPlumbConnectors() {
+        let connectorType = uiControlsPane.find('#jsplumbConnectorType').val();
+        if (connectorType === "StateMachine") {
+          let curviness = uiControlsPane.find('#smCurviness').val();
+          let margin = uiControlsPane.find('#margin').val()
+          console.log(connectorType, curviness, margin);
+          myself.owner.dataViz.jsPlumbInstance.importDefaults({
+            Connector: [connectorType, {curviness: curviness, margin: margin}]
+          });
+        } else if (connectorType === "Bezier") {
+          let curviness = uiControlsPane.find('#bezierCurviness').val();
+          console.log(connectorType, curviness);
+          myself.owner.dataViz.jsPlumbInstance.importDefaults({
+            Connector: [connectorType, {curviness: curviness}]
+          });
+        } else if (connectorType === "Straight") {
+          let stub = uiControlsPane.find('#stub').val();
+          let gap = uiControlsPane.find('#gap').val();
+          console.log(connectorType, stub, gap);
+          myself.owner.dataViz.jsPlumbInstance.importDefaults({
+            Connector: [connectorType, {stub: stub, gap: gap}]
+          });
+        } else {
+          assert(connectorType === "Flowchart");
+          let stub = uiControlsPane.find('#stub').val();
+          let gap = uiControlsPane.find('#gap').val();
+          let midpoint = uiControlsPane.find('#midpoint').val();
+          let cornerRadius = uiControlsPane.find('#cornerRadius').val();
+          console.log(connectorType, stub, gap, midpoint, cornerRadius);
+          myself.owner.dataViz.jsPlumbInstance.importDefaults({
+            // stub seems to be bogus and results in errors :(
+            Connector: [connectorType, {gap: gap, midpoint: midpoint, cornerRadius: cornerRadius}]
+          });
+        }
+
+        myself.owner.dataViz.renderDataStructures(myself.owner.curInstr); // UGLY!
+      }
+
+      // when any slider is moved, update its numeric display and then
+      // redraw all jsPlumb connectors with new options
       uiControlsPane.find('.jsplumbOptionSlider').each((i, e) => {
         e.oninput = function() {
           $(e).siblings('.sliderVal').html(this.value);
-          let connectorType = uiControlsPane.find('#jsplumbConnectorType').val();
-          if (connectorType === "StateMachine") {
-            let curviness = uiControlsPane.find('#smCurviness').val();
-            let margin = uiControlsPane.find('#margin').val()
-            console.log(connectorType, curviness, margin);
-
-            myself.owner.dataViz.jsPlumbInstance.importDefaults({
-              Connector: [connectorType, {curviness: curviness, margin: margin}]
-            });
-            myself.owner.dataViz.renderDataStructures(myself.owner.curInstr); // UGLY!
-          } else if (connectorType === "Bezier") {
-            let curviness = uiControlsPane.find('#bezierCurviness').val();
-            console.log(connectorType, curviness);
-
-            // create a new jsPlumb instance
-            myself.owner.dataViz.jsPlumbInstance.importDefaults({
-              Connector: [connectorType, {curviness: curviness}]
-            });
-            myself.owner.dataViz.renderDataStructures(myself.owner.curInstr); // UGLY!
-          } else if (connectorType === "Straight") {
-            let stub = uiControlsPane.find('#stub').val();
-            let gap = uiControlsPane.find('#gap').val();
-            console.log(connectorType, stub, gap);
-
-            myself.owner.dataViz.jsPlumbInstance.importDefaults({
-              Connector: [connectorType, {stub: stub, gap: gap}]
-            });
-            myself.owner.dataViz.renderDataStructures(myself.owner.curInstr); // UGLY!
-          } else {
-            assert(connectorType === "Flowchart");
-            let stub = uiControlsPane.find('#stub').val();
-            let gap = uiControlsPane.find('#gap').val();
-            let midpoint = uiControlsPane.find('#midpoint').val();
-            let cornerRadius = uiControlsPane.find('#cornerRadius').val();
-            console.log(connectorType, stub, gap, midpoint, cornerRadius);
-
-            myself.owner.dataViz.jsPlumbInstance.importDefaults({
-              // stub seems to be bogus and result in errors :(
-              Connector: [connectorType, {gap: gap, midpoint: midpoint, cornerRadius: cornerRadius}]
-            });
-            myself.owner.dataViz.renderDataStructures(myself.owner.curInstr); // UGLY!
-          }
+          rerenderJsPlumbConnectors();
         }
       });
 
@@ -3871,12 +3868,12 @@ class NavigationController {
           uiControlsPane.find('#midpoint').parent('.sliderWrapper').show();
           uiControlsPane.find('#cornerRadius').parent('.sliderWrapper').show();
         }
-      }).val('StateMachine').change(); // <-- trigger a change event on this initial setting to get the change handler above to run
 
-      // set default, which is StateMachine:
-      //uiControlsPane.find('.sliderWrapper').hide();
-      //uiControlsPane.find('#smCurviness').parent('.sliderWrapper').show();
-      //uiControlsPane.find('#margin').parent('.sliderWrapper').show();
+        rerenderJsPlumbConnectors();
+
+      }).val('StateMachine').change(); // <-- trigger a change event on this
+                                       // initial setting to get the change
+                                       // handler above to run
 
       return false; // don't follow the link and reload the page!
     });
