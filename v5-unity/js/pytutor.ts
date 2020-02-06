@@ -1153,6 +1153,10 @@ class DataVisualizer {
   // - Key: CSS ID of .heapObject
   // - Value: complete style field of .heapObject, which should contain
   //   any custom positioning info
+  // (note that this persists across multiple steps within the
+  // same execution, but not across executions since a brand-new
+  // ExecutionVisualizer and DataVisualizer is created for each
+  // standalone execution)
   draggedHeapObjectCSS: any;
 
   curTraceLayouts: any[];
