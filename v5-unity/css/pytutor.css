@@ -778,6 +778,10 @@ div.ExecutionVisualizer .pycrazy-highlight-prev-and-cur {
   padding: 3px 10px;
 }
 
+#uiControlsPane {
+  font-size: 8pt;
+}
+
 
 /* BEGIN Java frontend by David Pritchard and Will Gwozdz */
 
