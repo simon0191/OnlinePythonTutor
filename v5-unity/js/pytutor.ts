@@ -1147,6 +1147,14 @@ class DataVisualizer {
   domRoot: any;
   domRootD3: any;
 
+  // the CSS positions of any .heapObject elements that have been
+  // manually dragged, made possible by jQuery draggable();
+  // implemented as a d3.map() with ...
+  // - Key: CSS ID of .heapObject
+  // - Value: complete style field of .heapObject, which should contain
+  //   any custom positioning info
+  draggedHeapObjectCSS: any;
+
   curTraceLayouts: any[];
 
   jsPlumbInstance: any;
@@ -1161,6 +1169,8 @@ class DataVisualizer {
 
     this.domRoot = domRoot;
     this.domRootD3 = domRootD3;
+
+    this.draggedHeapObjectCSS = d3.map(); // see above for description
 
     var codeVizHTML = `
       <div id="dataViz">
@@ -1851,6 +1861,22 @@ class DataVisualizer {
     // use d3 to render the heap by mapping curToplevelLayout into <table class="heapRow">
     // and <td class="toplevelHeapObject"> elements
 
+    // before we clear the heap div below, record the custom positions
+    // of any heapObjects that we've made as draggable *and* that's been
+    // dragged somewhere different (as indicated by the jQuery
+    // data('draggedCSS') attribute being set to the custom CSS of the
+    // dragged object, which should contain its current custom position)
+    myViz.domRoot.find('.heapObject').each((i, e) => {
+      let draggedCSS = $(e).data('draggedCSS');
+      if (draggedCSS) {
+        // save a mapping between the .heapObject id and its draggedCSS
+        myViz.draggedHeapObjectCSS.set($(e).attr('id'), draggedCSS);
+      }
+    });
+
+    // now it's safe to totally erase all .heapObject elements by
+    // emptying '#heap' below ...
+
     // for simplicity, CLEAR this entire div every time, which totally
     // gets rid of the incremental benefits of using d3 for, say,
     // transitions or efficient updates. but it provides more
@@ -2402,6 +2428,9 @@ class DataVisualizer {
             // set margin rather than padding so that arrows tips still end
             // at the left edge of the element.
             // whoa, set relative CSS using +=, nice!
+            //
+            // TODO: tried looking into setting 'left' directly instead of
+            // 'margin-left', but somehow the results look different
             dstHeapObject.css('margin-left', '+=' + delta);
 
             //console.log(srcRowID, 'nudged', dstRowID, 'by', delta);
@@ -2425,7 +2454,34 @@ class DataVisualizer {
                 //   x[1] = y
                 if (k != srcRowID) {
                   // nudge this entire ROW by delta as well
-                  myViz.domRoot.find('#' + k).css('margin-left', '+=' + delta);
+
+                  // 2020-02-05: OK instead of nudging the .heapRow
+                  // object, we will traverse inside of it and nudge all
+                  // of its .heapObject children that reside directly
+                  // within .heapRow > .toplevelHeapObject > .heapObject
+                  //
+                  // why are we doing this? because we want it to
+                  // interact well with draggedHeapObjectCSS ... if an
+                  // element is dragged, we want to restore its
+                  // cached position from draggedHeapObjectCSS, which
+                  // will override all nudges. if we had nudged .heapRow
+                  // like we used to do, then .heapRow may itself be
+                  // nudged, which would kind of override
+                  // draggedHeapObjectCSS, which is applied to .heapObject
+                  //
+                  // old code: nudge .heapRow itself ...
+                  //myViz.domRoot.find('#' + k).css('margin-left', '+=' + delta);
+                  // new code: nudge all .heapObject children of .heapRow
+                  // (which is separated by an intermediary .toplevelHeapObject)
+                  myViz.domRoot.find('#' + k)
+                    .children('.toplevelHeapObject')
+                    .children('.heapObject')
+                    .css('margin-left', '+=' + delta);
+                  // NB: why don't we just use .find() to directly get
+                  // all .heapObject elements? because there are
+                  // sometimes .heapObject that are nested *within*
+                  // other .heapObject, and we don't want to unnecessarily
+                  // nudge those ... thus, we stick to .toplevelHeapObject
 
                   // then transitively add to entry for srcRowID
                   cur_nudgee_set.set(k, 1 /* useless value */);
@@ -2577,12 +2633,11 @@ class DataVisualizer {
       highlight_frame(myViz.owner.generateID('globals'));
     }
 
-    console.log('===');
-
     // use jQueryUI's draggable to make all heap objects contained
     // within YOURSELF draggable (NB: use myViz.domRoot.find() and *not*
     // $() since the latter may select heap objects belonging to OTHER
     // ExecutionVisualizer objects on page!)
+    let needToRedrawConnectors = false;
     myViz.domRoot.find('.heapObject').each((i, e) => {
       // very subtle: if this is a .heapObject that's *nested* within
       // another one, then don't make it draggable, since it's weird to
@@ -2599,27 +2654,46 @@ class DataVisualizer {
         return;
       }
 
-      console.log(e);
+      // set a custom position if one was found in draggedHeapObjectCSS ...
+      // make sure to do this after applying rightwardNudgeHack so that
+      // we override the positions of any nudged elements with ones from
+      // draggedHeapObjectCSS
+      let savedDraggedCSS = myViz.draggedHeapObjectCSS.get($(e).attr('id'));
+      if (savedDraggedCSS) {
+        $(e).attr('style', savedDraggedCSS);
+        console.log('GOT POSITION FROM CACHE!', $(e).attr('id'));
+        needToRedrawConnectors = true;
+      }
+
       $(e).css('cursor', 'pointer') // make the cursor a hand when you hover over it
         .draggable({
           drag: () => {
             // debounce to prevent excessive repaints, which can get super-slow
             $.doTimeout('heapObjectDrag', 10, () => { // pass in milliseconds
-              console.log('draggable DRAG'); // to make sure we're not adding too many callbacks
+              console.log('drag'); // to make sure we're not adding too many callbacks
               myViz.redrawConnectors(); // redraw all arrows whenever you drag!
             });
           },
 
           start: () => {
-            console.log('draggable START'); // to make sure we're not adding too many callbacks
           },
 
           stop: () => {
-            console.log('draggable STOP'); // to make sure we're not adding too many callbacks
-            myViz.redrawConnectors(); // redraw all arrows whenever you drag!
+            myViz.redrawConnectors(); // redraw all arrows when you drag stops
+
+            // unset width and height fields since those don't seem
+            // relevant and we don't want to save them in draggedCSS
+            $(e).css('width', '').css('height', '');
+
+            // save your current CSS, which has your custom position
+            $(e).data('draggedCSS', $(e).attr('style'));
           },
         });
     });
+
+    if (needToRedrawConnectors) {
+      myViz.redrawConnectors();
+    }
 
     myViz.owner.try_hook("end_renderDataStructures", {myViz:myViz.owner /* tricky! use owner to be safe */});
   }
