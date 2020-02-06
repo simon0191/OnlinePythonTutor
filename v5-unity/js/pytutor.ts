@@ -1151,12 +1151,19 @@ class DataVisualizer {
   // manually dragged, made possible by jQuery draggable();
   // implemented as a d3.map() with ...
   // - Key: CSS ID of .heapObject
-  // - Value: complete style field of .heapObject, which should contain
+  // - Value: complete CSS style field of .heapObject, which should contain
   //   any custom positioning info
   // (note that this persists across multiple steps within the
   // same execution, but not across executions since a brand-new
   // ExecutionVisualizer and DataVisualizer is created for each
   // standalone execution)
+  //
+  // (also note that the CSS style field of .heapObject might contain
+  // relative position offsets, so if the enclosing .heapRow shifts (presumably)
+  // vertically across different execution steps, then the object may still
+  // appear to jiggle vertically; this could happen when a .heapRow above it
+  // was deleted in a different step, due to objects in there being deleted;
+  // but this is an acceptable level of jank for now)
   draggedHeapObjectCSS: any;
 
   curTraceLayouts: any[];
