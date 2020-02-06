@@ -2644,6 +2644,7 @@ class DataVisualizer {
       highlight_frame(myViz.owner.generateID('globals'));
     }
 
+    // if customizeVizOptionsShown ...
     // use jQueryUI's draggable to make all heap objects contained
     // within YOURSELF draggable (NB: use myViz.domRoot.find() and *not*
     // $() since the latter may select heap objects belonging to OTHER
@@ -2672,34 +2673,42 @@ class DataVisualizer {
       let savedDraggedCSS = myViz.draggedHeapObjectCSS.get($(e).attr('id'));
       if (savedDraggedCSS) {
         $(e).attr('style', savedDraggedCSS);
-        console.log('GOT POSITION FROM CACHE!', $(e).attr('id'));
+        //console.log('GOT POSITION FROM CACHE!', $(e).attr('id'));
         needToRedrawConnectors = true;
       }
 
-      $(e).css('cursor', 'pointer') // make the cursor a hand when you hover over it
-        .draggable({
-          drag: () => {
-            // debounce to prevent excessive repaints, which can get super-slow
-            $.doTimeout('heapObjectDrag', 10, () => { // pass in milliseconds
-              console.log('drag'); // to make sure we're not adding too many callbacks
-              myViz.redrawConnectors(); // redraw all arrows whenever you drag!
-            });
-          },
 
-          start: () => {
-          },
+      // 2020-02-06: only make draggable() if customizeVizOptionsShown
+      // (i.e., when the user has clicked "Customize visualization" so that
+      // they purposely want to customize ... we do this to be conservative
+      // so as not to rock the boat because i haven't tested draggable()
+      // widely yet)
+      if (myViz.owner.navControls.customizeVizOptionsShown) {
+        $(e).css('cursor', 'pointer') // make the cursor a hand when you hover over it
+          .draggable({
+            drag: () => {
+              // debounce to prevent excessive repaints, which can get super-slow
+              $.doTimeout('heapObjectDrag', 10, () => { // pass in milliseconds
+                console.log('drag'); // to make sure we're not adding too many callbacks
+                myViz.redrawConnectors(); // redraw all arrows whenever you drag!
+              });
+            },
 
-          stop: () => {
-            myViz.redrawConnectors(); // redraw all arrows when you drag stops
+            start: () => {
+            },
 
-            // unset width and height fields since those don't seem
-            // relevant and we don't want to save them in draggedCSS
-            $(e).css('width', '').css('height', '');
+            stop: () => {
+              myViz.redrawConnectors(); // redraw all arrows when you drag stops
 
-            // save your current CSS, which has your custom position
-            $(e).data('draggedCSS', $(e).attr('style'));
-          },
-        });
+              // unset width and height fields since those don't seem
+              // relevant and we don't want to save them in draggedCSS
+              $(e).css('width', '').css('height', '');
+
+              // save your current CSS, which has your custom position
+              $(e).data('draggedCSS', $(e).attr('style'));
+            },
+          });
+      }
     });
 
     if (needToRedrawConnectors) {
@@ -3852,7 +3861,7 @@ class NavigationController {
                      </div>\
                      <div id="errorOutput"/>\
                      <div id="creditsPane"></div>\
-                     <div id="uiControlsPane"><a id="customizeVizLink" href="#">Customize visualization</a></div>\
+                     <div id="uiControlsPane"><a id="customizeVizLink" href="#">Customize visualization</a> (<font color="#e93f34">NEW!</font>)</div>\
                    </div>';
 
     this.domRoot.append(navHTML);
@@ -3886,14 +3895,15 @@ class NavigationController {
         return;
       }
 
+      // do this up top so that renderDataStructures is called,
+      // customizeVizOptionsShown is on, so objects get made .draggable()
+      this.customizeVizOptionsShown = true;
+
       uiControlsPane.append(' \
-        <div style="margin-top: 8px;"/>\
-          (you can drag heap objects to move them, but they won\'t be saved or synced with others)<br/>\
-          <div class="sliderWrapper">Arrow length: <input type="range" min="1" max="30" value="10" class="jsplumbOptionSlider" id="arrowLength"><span class="sliderVal">10</span></div>\
-          <div class="sliderWrapper">Arrow width: <input type="range" min="1" max="30" value="7" class="jsplumbOptionSlider" id="arrowWidth"><span class="sliderVal">7</span></div>\
-          <div class="sliderWrapper">Arrow fold: <input type="range" min="0" max="1" value="0.55" step="0.05" class="jsplumbOptionSlider" id="arrowFoldback"><span class="sliderVal">0.55</span></div>\
-          <div style="margin-top: 10px;">\
-          Pointer style:\
+        <div style="margin-top: 5px;"/>\
+          (move objects around by <b>dragging</b>, but their positions won\'t be shared in URL or live chat)\
+          <div style="margin-top: 8px; margin-bottom: 5px;">\
+          Line style:\
           <select id="jsplumbConnectorType">\
             <option value="StateMachine" selected>Default</option>\
             <option value="Bezier">Bezier</option>\
@@ -3908,7 +3918,9 @@ class NavigationController {
           <div class="sliderWrapper">Gap: <input type="range" min="0" max="50" value="0" class="jsplumbOptionSlider" id="gap"><span class="sliderVal">0</span></div>\
           <div class="sliderWrapper">Midpoint: <input type="range" min="0" max="10" value="0.5" step="0.5" class="jsplumbOptionSlider" id="midpoint"><span class="sliderVal">0.5</span></div>\
           <div class="sliderWrapper">CornerRadius: <input type="range" min="0" max="10" value="0" class="jsplumbOptionSlider" id="cornerRadius"><span class="sliderVal">0</span></div>\
-          <br/>\
+          <div style="margin-top: 10px;" class="sliderWrapper">Arrow length: <input type="range" min="1" max="30" value="10" class="jsplumbOptionSlider" id="arrowLength"><span class="sliderVal">10</span></div>\
+          <div class="sliderWrapper">Arrow width: <input type="range" min="1" max="30" value="7" class="jsplumbOptionSlider" id="arrowWidth"><span class="sliderVal">7</span></div>\
+          <div class="sliderWrapper">Arrow fold: <input type="range" min="0" max="1" value="0.55" step="0.05" class="jsplumbOptionSlider" id="arrowFoldback"><span class="sliderVal">0.55</span></div>\
         </div>\
       ');
 
@@ -4000,8 +4012,6 @@ class NavigationController {
       }).val('StateMachine').change(); // <-- trigger a change event on this
                                        // initial setting to get the change
                                        // handler above to run
-
-      this.customizeVizOptionsShown = true;
       return false; // don't follow the link and reload the page!
     });
   }
