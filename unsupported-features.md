@@ -31,7 +31,7 @@ Due to this ultra-focused design, the following features are not supported and w
   - e.g., make your numbers and strings smaller, your data structures contain fewer items, and your loops/functions run fewer times
   - or [set Python breakpoints](https://youtu.be/80ztTXP90Vs?t=42) using `#break` comments
 - Code that defines too many variables or objects
-  - [shorten your code](https://stackoverflow.com/help/minimal-reproducible-example) to isolate exactly what operations you want to visualize
+  - [shorten your code](https://stackoverflow.com/help/minimal-reproducible-example) to isolate what variables you want to visualize
   - remove unnecessary variables and objects
   - for Python, [use pythontutor_hide](https://www.youtube.com/watch?v=Mxt9HZWgwAM&list=PLzV58Zm8FuBL2WxxZKGZ6j1dH8NKb_HYI&index=6) to selectively hide variables
 - Visualizing custom data structures from imported libraries; Python Tutor visualizes only built-in types and data structures
