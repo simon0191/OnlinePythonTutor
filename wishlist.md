@@ -129,6 +129,7 @@ First read the [**unsupported features doc**](unsupported-features.md#read-this-
   - that way, I use TogetherJS only for the shared cursors (which some users even find annoying!)
   - this will give me more flexibility without being constrained by TogetherJS's clunky implementations
 - maybe some lightweight chat-based scaffolding or structure to prompt learners and helpers to interact in more productive ways rather than being a blank-slate freeform chat session ([example helper protocol](https://ksm-cs.blogspot.com/2019/10/gps-syndrome.html), example requester tips from Stack Overflow: [one](https://stackoverflow.com/help/minimal-reproducible-example), [two](https://stackoverflow.com/help/how-to-ask))
+- right now, in shared sessions the *same* code is executed N times whenever someone executes, since it simulates a "Visualize Execution" button click for all other people in the session, so they are burdening the server by executing N copies of the same code. moreover, some of their traces might be subtly different due to randomness or nondeterminism (e.g., different C/C++ pointer values). the "right" way to ensure that everyone is visualizing the exact same trace, as well as reducing burden on the server, is to simply have 1 person execute and then when they receive the trace back from the server, have that person send the trace to all other people in the session.
 
 
 ## Language Backends
