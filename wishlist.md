@@ -70,6 +70,9 @@ First read the [**unsupported features doc**](unsupported-features.md#read-this-
   - set breakpoints by clicking on gutter instead of directly on the code
   - debugger-style stepping into and out of function calls
 - drag-and-drop of visualization elements to let the user define custom ad-hoc layouts, and then remembering those positions across similar executions
+  - 2020-02-06: implemented first draft as a "Customize visualization" pane at the bottom of the visualizer; it's limited in that it does *not* remember positions across multiple executions. Similarly, it also doesn't remember them when you share via URL or live chat with others in a shared session. Challenges to implementing this:
+    - when you edit the code too much, then objects can be totally different, so what you think is heap_object_1 or whatever can turn out to be a completely different object on the next execution; there's no generally good way to do this! so punt. a simpler example is if you switch the order of 2 statements that define objects; then what the system thinks is object 1 and 2 will flip, i think: e.g., "x = [1,2,3]; y = [4,5,6]"
+    - for C/C++ we currently use pointer values as object IDs, so they probably won't match across executions; but we can canonicalize it somehow based on, say, order of appearance in the trace; that *might* work, since we already canonicalize for non-C languages.
 - hover over stack frames and then highlight the code that contains the call site of each frame
   - (more generally, think about other hover-based cross-linking of compile- and run-time information in visualizations)
 - more detailed visualizations of data structure element accesses or slices ([GitHub Issue](https://github.com/pgbovine/OnlinePythonTutor/issues/185))
