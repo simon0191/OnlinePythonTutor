@@ -177,6 +177,7 @@ The core issue here is that Python Tutor now has a fixed rendering algorithm (wi
 - define multiple custom views of the same underlying data. e.g.,:
   - C char arrays: view as strings or as encoded binary bytes?
   - C unions can be viewed in different ways
+  - C allows multiple pointers of different types to refer to the same block of memory. e.g., if an int* and a char* refers to the same memory block, should it be rendered as an array of ints or an array of chars? ideally let the user choose!
   - Python 2 strings: view as text or as encoded binary bytes?
   - objects: view as their constituent parts or as their "toString()"-like printed representations?
   - numbers: formatted as hex, decimal, etc.? how much precision for floats?
