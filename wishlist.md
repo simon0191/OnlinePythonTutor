@@ -178,13 +178,13 @@ I've thus far resisted going down this path since there are already so many grea
 
 The core issue here is that Python Tutor now has a fixed rendering algorithm (with a small set of toggle options), which I designed heuristically to meet [common introductory teaching use cases](unsupported-features.md#read-this-first). However, instructors in particular want more flexibility in what and how to render their data.
 
-- define multiple custom views of the same underlying data. e.g.,:
+- define multiple custom views of the same underlying data (either via the UI or by letting the user attach custom JS rendering code to individual object values) e.g.,:
   - C char arrays: view as strings or as encoded binary bytes?
   - C unions can be viewed in different ways
   - C allows multiple pointers of different types to refer to the same block of memory. e.g., if an int* and a char* refers to the same memory block, should it be rendered as an array of ints or an array of chars? ideally let the user choose!
   - Python 2 strings: view as text or as encoded binary bytes?
   - objects: view as their constituent parts or as their "toString()"-like printed representations?
-  - numbers: formatted as hex, decimal, etc.? how much precision for floats?
+  - numbers: formatted as hex, decimal, binary (for bit-level manipulations) etc.? how much precision for floats?
   - more extreme: a binary blob can represent, say, a JPEG image; should we decode and display it?
 - define multiple linked representations: the ability to have one variable map to multiple visualization components.
   - This is useful for, say, an NLP dynamic programming algorithm where the code must both keep track of a parse tree and a 2-D matrix for the dynamic programming table, and both should update in unison.
