@@ -35,20 +35,17 @@ depsMac:
 run:
 	jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js $(infile)
 
-# to make a json dump that's compatible with Python Tutor's frontend
-jsondump:
-	jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug --jsondump=true jslogger.js $(infile)
-
-# to run on a specific input file: make trace infile=tests/fact.js
-trace:
-	jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js --jsfile=/Users/pgbovine/Dropbox/opt-git/OnlinePythonTutor/v3/test-trace.js $(infile)
+# output a JSON trace that's compatible with Python Tutor's frontend
+# use '@' to NOT print out the command
+json:
+	@jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js --jsondump=true $(infile)
 
 # to run on a specific input file: make pretty infile=tests/fact.js
+# use '@' to NOT print out the command
 pretty:
-	jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js --prettydump=true $(infile)
-
+	@jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js --prettydump=true $(infile)
 tspretty:
-	jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js --prettydump=true --typescript=true $(infile)
+	@jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js --prettydump=true --typescript=true $(infile)
 
 golden:
 	jshint jslogger.js && python golden_test.py --all
