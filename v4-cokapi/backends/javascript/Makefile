@@ -21,15 +21,21 @@ bash:
 depsLinux:
 	tar -xvf node-v6.0.0-linux-x64.tar.xz
 	npm install # rely on package.json
+	npm install -g jshint # might need sudo
 
 # for building natively on macOS
 depsMac:
 	tar -xvf node-v6.0.0-darwin-x64.tar.gz
 	npm install # rely on package.json
+	npm install -g jshint # might need sudo
 
 # to run on a specific input file: make infile=tests/fact.js
 run:
 	jshint jslogger.js && node --expose-debug-as=Debug jslogger.js $(infile)
+
+# to make a json dump that's compatible with Python Tutor's frontend
+jsondump:
+	jshint jslogger.js && node --expose-debug-as=Debug --jsondump=true jslogger.js $(infile)
 
 # to run on a specific input file: make trace infile=tests/fact.js
 trace:

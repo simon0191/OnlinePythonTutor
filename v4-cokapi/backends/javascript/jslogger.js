@@ -1,3 +1,4 @@
+/* jshint esversion: 6, unused: false */
 /*
 
 JS logger backend for Online Python Tutor runtime visualizer
@@ -411,6 +412,9 @@ function bar(x) {
         for (i = 0; i < o.length; i++) {
           newEncodedObj.push(encodeObject(o[i]));
         }
+/* jshint ignore:start */
+      // TODO: jshint says: The '__proto__' property is deprecated
+      // but I'm ignoring it for now so as not to rock the boat
       } else if (o.__proto__.toString() === canonicalSet.__proto__.toString()) { // dunno why 'instanceof' doesn't work :(
         newEncodedObj.push('SET');
         // ES6 Set (TODO: add WeakSet)
@@ -418,6 +422,7 @@ function bar(x) {
           newEncodedObj.push(encodeObject(item));
         }
       } else if (o.__proto__.toString() === canonicalMap.__proto__.toString()) { // dunno why 'instanceof' doesn't work :(
+/* jshint ignore:end */
         // ES6 Map (TODO: add WeakMap)
         newEncodedObj.push('DICT'); // use the Python 'DICT' type since it's close enough; adjust display in frontend
         for (let [key, value] of o) {
@@ -789,7 +794,7 @@ function listener(event, execState, eventData, data) {
 
           scopeObj = sc.details_.details_[1];
           assert(_.isObject(scopeObj));
-          var localScopePairs = _.pairs(scopeObj);
+          let localScopePairs = _.pairs(scopeObj);
           //log('Local vars:', util.inspect(scopeObj));
           for (jj = 0; jj < localScopePairs.length; jj++) {
             e = localScopePairs[jj];
@@ -835,7 +840,7 @@ function listener(event, execState, eventData, data) {
           //log('Local block:', scopeIdx, util.inspect(sc, {showHidden: true, depth: null}));
           hasLocalBlock = true;
 
-          var localScopePairs = _.pairs(scopeObj);
+          let localScopePairs = _.pairs(scopeObj);
           for (jj = 0; jj < localScopePairs.length; jj++) {
             var mungedVarName = e[0] + ' (block ' + scopeIdx + ')';
             e = localScopePairs[jj];
@@ -922,11 +927,11 @@ function listener(event, execState, eventData, data) {
         // names should not collide. i.e., you can't declare a var and
         // let/const variable with the SAME NAME in the top-level global scope
         scopeObj = sc.details_.details_[1];
-        var globalScopePairs = _.pairs(scopeObj);
+        let globalScopePairs = _.pairs(scopeObj);
         //log(scopeType, _.keys(scopeObj));
         for (jj = 0; jj < globalScopePairs.length; jj++) {
-          var globalVarname = globalScopePairs[jj][0];
-          var globalVal = globalScopePairs[jj][1];
+          let globalVarname = globalScopePairs[jj][0];
+          let globalVal = globalScopePairs[jj][1];
           if (!_.has(IGNORE_GLOBAL_VARS, globalVarname)) {
             curTraceEntry.ordered_globals.push(globalVarname);
             assert(!_.has(curTraceEntry.globals, globalVarname));
@@ -957,11 +962,11 @@ function listener(event, execState, eventData, data) {
         scopeObj = sc.details_.details_[1];
         assert(_.isObject(scopeObj));
         //log('Global block:', util.inspect(sc, {showHidden: true, depth: null}));
-        var globalScopePairs = _.pairs(scopeObj);
+        let globalScopePairs = _.pairs(scopeObj);
         //log(scopeType, _.keys(scopeObj));
         for (jj = 0; jj < globalScopePairs.length; jj++) {
-          var globalVarname = globalScopePairs[jj][0] + ' (block ' + scopeIdx + ')';
-          var globalVal = globalScopePairs[jj][1];
+          let globalVarname = globalScopePairs[jj][0] + ' (block ' + scopeIdx + ')';
+          let globalVal = globalScopePairs[jj][1];
 
           // TODO: decide later whether to do this or not, still undecided ...
           //
@@ -1120,10 +1125,10 @@ try {
   //debug.setBreakOnUncaughtException(); // doesn't seem to do anything :/
 
   var overrideScope = {
-    setInterval: () => {throw 'Error: setInterval() is not supported by Python Tutor'},
-    setTimeout: () => {throw 'Error: setTimeout() is not supported by Python Tutor'},
-    setImmediate: () => {throw 'Error: setImmediate() is not supported by Python Tutor'},
-  }
+    setInterval: () => {throw 'Error: setInterval() is not supported by Python Tutor';},
+    setTimeout: () => {throw 'Error: setTimeout() is not supported by Python Tutor';},
+    setImmediate: () => {throw 'Error: setImmediate() is not supported by Python Tutor';},
+  };
 
   _eval(wrappedCod, 'userscript.js', overrideScope /* scope */, true /* includeGlobals */);
 }
