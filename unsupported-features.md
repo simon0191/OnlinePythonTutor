@@ -85,7 +85,7 @@ Look at these GitHub issues for more C/C++ unsupported features: https://github.
 
 ### JavaScript unsupported features
 
-- some let-defined variables don't display properly ([example1](https://github.com/pgbovine/OnlinePythonTutor/issues/285), [example2](https://github.com/pgbovine/OnlinePythonTutor/issues/288), [example3](https://github.com/pgbovine/OnlinePythonTutor/issues/283), [example4](https://github.com/pgbovine/OnlinePythonTutor/issues/145)) (this is something I want to eventually fix ... email me or file a GitHub issue if you find more examples!)
+- some let-defined variables don't display properly ([example1](https://github.com/pgbovine/OnlinePythonTutor/issues/285), [example2](https://github.com/pgbovine/OnlinePythonTutor/issues/288), [example3](https://github.com/pgbovine/OnlinePythonTutor/issues/283), [example4](https://github.com/pgbovine/OnlinePythonTutor/issues/145), [other javascript bugs which might involve 'let'](https://github.com/pgbovine/OnlinePythonTutor/labels/javascript)) (this is something I want to eventually fix ... email me or file a GitHub issue if you find more examples!)
 - asynchronous and event-driven code
   - including setTimeout, setInterval, etc.
   - promises, async/await
