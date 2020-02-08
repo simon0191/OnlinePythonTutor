@@ -66,10 +66,13 @@ Due to this ultra-focused design, the following features are not supported and w
 - taking text input from the user using scanf(), fgets with stdin, cin >>,  etc.
 - code with [undefined behavior](https://blog.regehr.org/archives/213) may not match what happens when running on your own computer!
   - specifically, code with memory errors will fail-fast using [Valgrind Memcheck](http://valgrind.org/docs/manual/mc-manual.html)
+- memory leaks: leaked memory is not visualized since nothing points to them
 - some complex typedefs
 - function pointers
 - memory that void* pointers refer to is displayed as raw bytes
-- if pointers of different types point to the same memory block, unexpected things may happen; e.g., if an int* and a char* point to the same block of memory, it may be visualized as either an int or a char array
+- if pointers of different types point to the same memory block, unexpected things may happen; e.g., if an int* and a char* point to the same block of memory, it may be visualized as either an int or a char array (see [type punning](https://blog.regehr.org/archives/959))
+- bitfields
+- alternative representations of memory like viewing individual bits or bytes
 - [stack arrays without compile-time sizes](https://github.com/pgbovine/opt-cpp-backend/issues/44)
 - [read-only memory isn't visualized separately from the heap](https://github.com/pgbovine/opt-cpp-backend/issues/70)
 - [struct members declared as unbounded arrays](https://github.com/pgbovine/opt-cpp-backend/issues/73)
