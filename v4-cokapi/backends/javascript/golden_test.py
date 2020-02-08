@@ -7,10 +7,14 @@ by Philip Guo
 TESTDIRS = ['tests/']
 INPUT_FILE_EXTENSION = '.js'
 
-# program to run, with input file as an extra argument
-#PROGRAM = ['node', '--expose-debug-as=Debug', 'jslogger.js', '--prettydump=true']
-#PROGRAM = ['node-v6.0.0-linux-x64/bin/node', '--expose-debug-as=Debug', 'jslogger.js', '--prettydump=true']
-PROGRAM = ['node-v6.0.0-darwin-x64/bin/node', '--expose-debug-as=Debug', 'jslogger.js', '--prettydump=true']
+import platform
+
+if 'Darwin' in platform.system(): # macOS
+    PROGRAM = ['node-v6.0.0-darwin-x64/bin/node', '--expose-debug-as=Debug', 'jslogger.js', '--prettydump=true']
+elif 'Linux' in platform.system(): # linux
+    PROGRAM = ['node-v6.0.0-linux-x64/bin/node', '--expose-debug-as=Debug', 'jslogger.js', '--prettydump=true']
+else:
+    assert False
 
 # this program should output to stdout, which will be redirected to this
 # extension:

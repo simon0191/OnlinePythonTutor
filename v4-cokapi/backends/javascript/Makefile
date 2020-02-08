@@ -15,7 +15,17 @@ bash:
 	docker run -m 512M -t -i --rm --user=netuser --net=none --cap-drop all pgbovine/cokapi-js:v1 bash
 
 
-# older targets
+# to run natively on Linux or macOS
+
+# for building on native linux
+depsLinux:
+	tar -xvf node-v6.0.0-linux-x64.tar.xz
+	npm install # rely on package.json
+
+# for building natively on macOS
+depsMac:
+	tar -xvf node-v6.0.0-darwin-x64.tar.gz
+	npm install # rely on package.json
 
 # to run on a specific input file: make infile=tests/fact.js
 run:
@@ -37,7 +47,3 @@ goldentest:
 
 diffall:
 	jshint jslogger.js && python golden_test.py --diffall
-
-deps:
-	tar -xvf node-v6.0.0-linux-x64.tar.xz
-	npm install # rely on package.json
