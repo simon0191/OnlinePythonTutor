@@ -842,8 +842,8 @@ function listener(event, execState, eventData, data) {
 
           let localScopePairs = _.pairs(scopeObj);
           for (jj = 0; jj < localScopePairs.length; jj++) {
-            var mungedVarName = e[0] + ' (block ' + scopeIdx + ')';
             e = localScopePairs[jj];
+            var mungedVarName = e[0] + ' (block ' + scopeIdx + ')';
 
             // TODO: decide later whether to do this or not, still undecided ...
             //
