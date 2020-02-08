@@ -20,35 +20,37 @@ bash:
 # for building on native linux
 depsLinux:
 	tar -xvf node-v6.0.0-linux-x64.tar.xz
+	ln -s node-v6.0.0-linux-x64 node-v6.0.0
 	npm install # rely on package.json
 	npm install -g jshint # might need sudo
 
 # for building natively on macOS
 depsMac:
 	tar -xvf node-v6.0.0-darwin-x64.tar.gz
+	ln -s node-v6.0.0-darwin-x64 node-v6.0.0
 	npm install # rely on package.json
 	npm install -g jshint # might need sudo
 
 # to run on a specific input file: make infile=tests/fact.js
 run:
-	jshint jslogger.js && node --expose-debug-as=Debug jslogger.js $(infile)
+	jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js $(infile)
 
 # to make a json dump that's compatible with Python Tutor's frontend
 jsondump:
-	jshint jslogger.js && node --expose-debug-as=Debug --jsondump=true jslogger.js $(infile)
+	jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug --jsondump=true jslogger.js $(infile)
 
 # to run on a specific input file: make trace infile=tests/fact.js
 trace:
-	jshint jslogger.js && node --expose-debug-as=Debug jslogger.js --jsfile=/Users/pgbovine/Dropbox/opt-git/OnlinePythonTutor/v3/test-trace.js $(infile)
+	jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js --jsfile=/Users/pgbovine/Dropbox/opt-git/OnlinePythonTutor/v3/test-trace.js $(infile)
 
 # to run on a specific input file: make pretty infile=tests/fact.js
 pretty:
-	jshint jslogger.js && node --expose-debug-as=Debug jslogger.js --prettydump=true $(infile)
+	jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js --prettydump=true $(infile)
 
 tspretty:
-	jshint jslogger.js && node --expose-debug-as=Debug jslogger.js --prettydump=true --typescript=true $(infile)
+	jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js --prettydump=true --typescript=true $(infile)
 
-goldentest:
+golden:
 	jshint jslogger.js && python golden_test.py --all
 
 diffall:

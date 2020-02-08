@@ -7,14 +7,8 @@ by Philip Guo
 TESTDIRS = ['tests/']
 INPUT_FILE_EXTENSION = '.js'
 
-import platform
-
-if 'Darwin' in platform.system(): # macOS
-    PROGRAM = ['node-v6.0.0-darwin-x64/bin/node', '--expose-debug-as=Debug', 'jslogger.js', '--prettydump=true']
-elif 'Linux' in platform.system(): # linux
-    PROGRAM = ['node-v6.0.0-linux-x64/bin/node', '--expose-debug-as=Debug', 'jslogger.js', '--prettydump=true']
-else:
-    assert False
+# see Makefile: run 'make depsLinux' or 'make depsMac' to install node-v6.0.0
+PROGRAM = ['node-v6.0.0/bin/node', '--expose-debug-as=Debug', 'jslogger.js', '--prettydump=true']
 
 # this program should output to stdout, which will be redirected to this
 # extension:
