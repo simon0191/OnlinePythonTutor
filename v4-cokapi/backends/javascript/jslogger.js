@@ -1,4 +1,3 @@
-/* jshint esversion: 6, unused: false */
 /*
 
 JS logger backend for Online Python Tutor runtime visualizer
@@ -58,6 +57,8 @@ regarding the 'handle_' field of serialized objects ...
 
 
 TODOs:
+- eliminate 'var' declarations and use 'let' instead! 'var' leads to
+  subtle subtle bugs, ergh!!!
 
 
 Low-priority TODOs:
@@ -89,7 +90,7 @@ TypeScript TODOs:
 */
 
 
-/*jshint node: true */
+/* jshint esversion: 6, unused: false, node: true */
 /* global Debug */
 "use strict";
 
