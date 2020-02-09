@@ -32,13 +32,20 @@ depsMac:
 	npm install -g jshint # might need sudo
 
 # to run on a specific input file: make infile=tests/fact.js
+# use '@' to NOT print out the command
 run:
-	jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js $(infile)
+	@jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js $(infile)
 
 # output a JSON trace that's compatible with Python Tutor's frontend
 # use '@' to NOT print out the command
 json:
 	@jshint jslogger.js && node-v6.0.0/bin/node --expose-debug-as=Debug jslogger.js --jsondump=true $(infile)
+
+# redirect json output to a file that you can import from something like
+# ../../../v5-unity/pytutor-embed-demo.html
+embed:
+	@make json infile=$(infile) > ../../../v5-unity/pytutor-embed-demo/js-test.json
+
 
 # to run on a specific input file: make pretty infile=tests/fact.js
 # use '@' to NOT print out the command
