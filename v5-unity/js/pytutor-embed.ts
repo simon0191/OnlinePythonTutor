@@ -2,6 +2,8 @@
 // Copyright (C) Philip Guo (philip@pgbovine.net)
 // LICENSE: https://github.com/pgbovine/OnlinePythonTutor/blob/master/LICENSE.txt
 
+// see ../pytutor-embed-demo.html for how to use this file
+
 import {ExecutionVisualizer} from './pytutor';
 
 var allVisualizers = [];
