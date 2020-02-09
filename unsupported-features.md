@@ -87,13 +87,13 @@ Look at these GitHub issues for more C/C++ unsupported features: https://github.
 
 ### JavaScript unsupported features
 
-- some let-defined variables don't display properly ([example1](https://github.com/pgbovine/OnlinePythonTutor/issues/285), [example2](https://github.com/pgbovine/OnlinePythonTutor/issues/288), [example3](https://github.com/pgbovine/OnlinePythonTutor/issues/283), [example4](https://github.com/pgbovine/OnlinePythonTutor/issues/145), [other javascript bugs which might involve 'let'](https://github.com/pgbovine/OnlinePythonTutor/labels/javascript)) (this is something I want to eventually fix ... email me or file a GitHub issue if you find more examples!)
 - asynchronous and event-driven code
   - including setTimeout, setInterval, etc.
   - promises, async/await
 - anything that operates on webpages, such as DOM manipulation, alert(), prompt(), confirm(), etc.
   - this includes trying to import frontend libraries or frameworks (e.g., jQuery, React)
 - Date() object
+- known bug: for-loop variables show up *duplicated* in two nested blocks due to how the Node.js JavaScript debugger emits its values ([see GitHub issue](https://github.com/pgbovine/OnlinePythonTutor/issues/264) for details)
 - more JavaScript unsupported features: https://github.com/pgbovine/OnlinePythonTutor/issues?q=is%3Aissue+is%3Aopen+label%3Ajavascript
 
 ### Java unsupported features
