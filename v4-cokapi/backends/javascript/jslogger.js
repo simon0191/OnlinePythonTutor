@@ -641,6 +641,8 @@ function listener(event, execState, eventData, data) {
     curTraceEntry.event = logEventType;
     curTraceEntry.heap = getHeap();
 
+    //log('Line', curTraceEntry.line);
+
     var hasLocalBlock = false;
 
     for (i = 0;
@@ -799,6 +801,13 @@ function listener(event, execState, eventData, data) {
           //log('Local vars:', util.inspect(scopeObj));
           for (jj = 0; jj < localScopePairs.length; jj++) {
             e = localScopePairs[jj];
+            // when you use '..args' for rest parameters, it bizzarely
+            // creates an extra '' unnamed variable above args, so just
+            // ignore that since it seems super confusing ...
+            // see tests/let-bugreport-3*.js
+            if (e[0] === '') {
+              continue;
+            }
             traceStackEntry.ordered_varnames.push(e[0]);
             assert(!_.has(traceStackEntry.encoded_locals, e[0]));
             traceStackEntry.encoded_locals[e[0]] = encodeObject(e[1]);
