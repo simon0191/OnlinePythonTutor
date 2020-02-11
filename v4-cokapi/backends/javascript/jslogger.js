@@ -2,11 +2,23 @@
 
 JS logger backend for Online Python Tutor runtime visualizer
 
+Dev tips:
+- use log() to print debugging output to terminal. do NOT use console.log()
+  since that won't work ... it will go to the stdout of the trace itself!
+- [this one is a bit hard to articulate] do NOT call methods on objects that
+  you're trying to encode in encodeObject and related functions, since if
+  those methods are defined in the object, the logger will try to call
+  them and then encode their contents, which sometimes leads to CRASHES
+- debugging is a PAIN since the logger often crashes without an exception
+  because (maybe, i think?) exceptions are themselves logged to trace?!?
+
+
 First version created on: 2015-01-02 by Philip Guo
 - originally made for Node v0.10.25, which supports ES5 (Jan 2015)
 - on 2016-05-01, ported over to also work on Node v6.0.0, which supports ES6
 - NB on 2018-04-05: this script seems *very* sensitive to Node version,
   so even a slightly newer version of Node v6 won't work; it seems very brittle
+  - DON'T UPGRADE UNLESS YOU'RE PREPARED TO HUNT DOWN SUBTLE BUGS
 
 Run as:
 node --expose-debug-as=Debug jslogger.js
@@ -295,15 +307,21 @@ function resetHeap() {
   encodedHeapObjects = {};
 }
 
-// for some weird reason, doing an 'instanceof' test doesn't work :/
-var canonicalSet = new Set();
-var canonicalMap = new Map();
-
 // modeled after:
 // https://github.com/pgbovine/OnlinePythonTutor/blob/master/v3/pg_encoder.py
 //
 // modifies global encodedHeapObjects
+//
+// WARNING: do NOT call methods on objects that you're trying to encode in
+// encodeObject and related functions, since if those methods are defined
+// in the object, the logger will try to call them and then encode their
+// contents, which sometimes leads to CRASHES. for instance, if you call
+// o.toString() or o.__proto__.toString() expecting Object's toString
+// but o actually defines a custom toString(), then that will be called
+// and weird crashes will happen. [ugh i'm not explaining this super-well]
 function encodeObject(o) {
+  //log('encodeObject', o);
+
   if (_.isNumber(o)) {
     if (_.isNaN(o)) {
       return ['SPECIAL_FLOAT', 'NaN'];
@@ -413,17 +431,13 @@ function bar(x) {
         for (i = 0; i < o.length; i++) {
           newEncodedObj.push(encodeObject(o[i]));
         }
-/* jshint ignore:start */
-      // TODO: jshint says: The '__proto__' property is deprecated
-      // but I'm ignoring it for now so as not to rock the boat
-      } else if (o.__proto__.toString() === canonicalSet.__proto__.toString()) { // dunno why 'instanceof' doesn't work :(
+      } else if (_.isSet(o)) { // instanceof doesn't work, but _.isSet seems to!
         newEncodedObj.push('SET');
         // ES6 Set (TODO: add WeakSet)
         for (let item of o) {
           newEncodedObj.push(encodeObject(item));
         }
-      } else if (o.__proto__.toString() === canonicalMap.__proto__.toString()) { // dunno why 'instanceof' doesn't work :(
-/* jshint ignore:end */
+      } else if (_.isMap(o)) { // instanceof doesn't work, but _.isMap seems to!
         // ES6 Map (TODO: add WeakMap)
         newEncodedObj.push('DICT'); // use the Python 'DICT' type since it's close enough; adjust display in frontend
         for (let [key, value] of o) {
@@ -432,27 +446,29 @@ function bar(x) {
       } else {
         // a true object
 
-        // if there's a custom toString() function (note that a truly
-        // prototypeless object won't have toString method, so check first to
-        // see if toString is *anywhere* up the prototype chain)
-        var s = (o.toString !== undefined) ? o.toString() : '';
-        if (s !== '' && s !== '[object Object]') {
-          newEncodedObj.push('INSTANCE_PPRINT', 'object', s);
-        } else {
-          newEncodedObj.push('INSTANCE', '');
-          var pairs = _.pairs(o);
-          for (i = 0; i < pairs.length; i++) {
-            var e = pairs[i];
-            newEncodedObj.push([encodeObject(e[0]), encodeObject(e[1])]);
-          }
+        // a prior bug here is that if o defines its own toString(),
+        // then the logger might crash when trying to call it. thus, do
+        // NOT call toString() in here to try to emit a INSTANCE_PPRINT.
+        //
+        // note that this means we won't ever emit INSTANCE_PPRINT
+        // entries to pretty-print objects using their toString()
+        // representations, which might make some objects print out
+        // messier; oh wells!
+        newEncodedObj.push('INSTANCE', '');
+        var pairs = _.pairs(o);
+        for (i = 0; i < pairs.length; i++) {
+          var e = pairs[i];
+          newEncodedObj.push([encodeObject(e[0]), encodeObject(e[1])]);
+        }
 
-          var proto = Object.getPrototypeOf(o);
-          if (_.isObject(proto) && !_.isEmpty(proto)) {
-            //log('obj.prototype', proto, proto.smallObjId_hidden_);
-            // I think __proto__ is the official term for this field,
-            // *not* 'prototype'
-            newEncodedObj.push(['__proto__', encodeObject(proto)]);
-          }
+        var proto = Object.getPrototypeOf(o);
+        if (_.isObject(proto) && !_.isEmpty(proto)) {
+          //log('obj.prototype', proto, proto.smallObjId_hidden_);
+          // I think __proto__ is the official term for this field,
+          // *not* 'prototype'
+          // 2020-02-10: note that __proto__ is actually deprecated:
+          // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/proto
+          newEncodedObj.push(['__proto__', encodeObject(proto)]);
         }
       }
 
@@ -530,8 +546,6 @@ function listener(event, execState, eventData, data) {
 
   var all_userscript_frames = [];
 
-
-  //log('execState.frameCount', execState.frameCount());
 
   // only dig up frames in userscript.js
   for (i = 0, n = execState.frameCount(); i < n; i++) {
@@ -688,7 +702,6 @@ function listener(event, execState, eventData, data) {
       var receiver = f.receiver();
       if (receiver.type_ === 'object') {
         var realThis = receiver.value_;
-
         // sometimes you'll get a weirdo receiver that's an empty object
         // with NO PROTOTYPE ... wtf?!? WTF?!? that's real bad news, so
         // we don't want to try to run encodeObject on it, since it
@@ -1086,7 +1099,7 @@ if (argv.typescript) {
   isTypescript = true;
   originalTsCod = cod; // stash this away!
   var tscCompilerOutput = typescriptCompile(cod);
-  //console.log(tscCompilerOutput);
+  //log(tscCompilerOutput);
 
   var tsSourceMap, compiledJsCod;
   tscCompilerOutput.outputs.forEach(function(e, i) {
