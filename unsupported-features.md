@@ -99,9 +99,13 @@ Look at these GitHub issues for more C/C++ unsupported features: https://github.
 
 ### Java unsupported features
 
+Note that the Java version is **not maintained anymore** so I am unlikely to fix reported bugs here.
+
 - some data structures like ArrayList aren't visualized properly (see [GitHub issue](https://github.com/pgbovine/OnlinePythonTutor/issues/236))
 
 ### Ruby unsupported features
+
+Note that the Ruby version is **not maintained anymore** so I am unlikely to fix reported bugs here.
 
 - see GitHub issues: https://github.com/pgbovine/OnlinePythonTutor/issues?q=is%3Aissue+is%3Aopen+label%3Aruby
 
