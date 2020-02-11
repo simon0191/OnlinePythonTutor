@@ -124,6 +124,8 @@ var log = console.warn; // use stderr because stdout is being captured in the tr
 
 var argv = require('minimist')(process.argv.slice(2));
 
+let DEBUG_LOG = false;
+
 
 var IGNORE_GLOBAL_VARS = {'ArrayBuffer': true,
                           'Int8Array': true,
@@ -320,7 +322,7 @@ function resetHeap() {
 // but o actually defines a custom toString(), then that will be called
 // and weird crashes will happen. [ugh i'm not explaining this super-well]
 function encodeObject(o) {
-  //log('encodeObject', o);
+  if (DEBUG_LOG) {log('encodeObject', o);}
 
   if (_.isNumber(o)) {
     if (_.isNaN(o)) {
@@ -576,8 +578,10 @@ function listener(event, execState, eventData, data) {
     }
     prevStack = curStack;
 
-    //log('======');
-    //log('all_userscript_frames.length:', all_userscript_frames.length);
+    if (DEBUG_LOG) {
+      log('======');
+      log('all_userscript_frames.length:', all_userscript_frames.length);
+    }
     var topFrame = all_userscript_frames[0];
     var topIsReturn = topFrame.isAtReturn();
     if (topIsReturn) {
@@ -655,14 +659,14 @@ function listener(event, execState, eventData, data) {
     curTraceEntry.event = logEventType;
     curTraceEntry.heap = getHeap();
 
-    //log('Line', curTraceEntry.line);
+    if (DEBUG_LOG) {log('Line', curTraceEntry.line);}
 
     var hasLocalBlock = false;
 
     for (i = 0;
          i < all_userscript_frames.length - 1; /* last frame is fake 'top-level' global frame */
          i++) {
-      //log('all_userscript_frames[' + i + ']');
+      if (DEBUG_LOG) {log('all_userscript_frames[' + i + ']');}
       var traceStackEntry = {};
 
       f = all_userscript_frames[i];
@@ -671,7 +675,7 @@ function listener(event, execState, eventData, data) {
       var isConstructorCall = f.isConstructCall();
 
       var fid = getCanonicalFrameId(f);
-      //log(i, 'funcname:', f.func().name(), fid);
+      if (DEBUG_LOG) {log(i, 'funcname:', f.func().name(), fid);}
 
       traceStackEntry.func_name = f.func().name();
       traceStackEntry.frame_id = fid;
@@ -768,7 +772,7 @@ function listener(event, execState, eventData, data) {
         }
       }
 
-      //log('  f.scopeCount()', f.scopeCount(), ', nBlockScopes:', nBlockScopes);
+      if (DEBUG_LOG) {log('  f.scopeCount()', f.scopeCount(), ', nBlockScopes:', nBlockScopes);}
 
       var nParentScopes = 1;
       // TODO: for some weird reason, it doesn't work when I iterate
@@ -811,7 +815,7 @@ function listener(event, execState, eventData, data) {
           scopeObj = sc.details_.details_[1];
           assert(_.isObject(scopeObj));
           let localScopePairs = _.pairs(scopeObj);
-          //log('Local vars:', util.inspect(scopeObj));
+          if (DEBUG_LOG) {log('Local vars:', util.inspect(scopeObj));}
           for (jj = 0; jj < localScopePairs.length; jj++) {
             e = localScopePairs[jj];
             // when you use '..args' for rest parameters, it bizzarely
@@ -860,7 +864,7 @@ function listener(event, execState, eventData, data) {
           scopeIdx = nBlockScopes - sc.scope_index_;
           scopeObj = sc.details_.details_[1];
           assert(_.isObject(scopeObj));
-          //log('Local block:', scopeIdx, util.inspect(sc, {showHidden: true, depth: null}));
+          if (DEBUG_LOG) {log('Local block:', scopeIdx, util.inspect(sc, {showHidden: true, depth: null}));}
           hasLocalBlock = true;
 
           let localScopePairs = _.pairs(scopeObj);
@@ -984,7 +988,7 @@ function listener(event, execState, eventData, data) {
         scopeIdx = nGlobalBlockScopes - sc.scope_index_;
         scopeObj = sc.details_.details_[1];
         assert(_.isObject(scopeObj));
-        //log('Global block:', util.inspect(sc, {showHidden: true, depth: null}));
+        if (DEBUG_LOG) {log('Global block:', util.inspect(sc, {showHidden: true, depth: null}));}
         let globalScopePairs = _.pairs(scopeObj);
         //log(scopeType, _.keys(scopeObj));
         for (jj = 0; jj < globalScopePairs.length; jj++) {
