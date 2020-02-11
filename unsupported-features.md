@@ -34,13 +34,13 @@ Due to this ultra-focused design, the following features are not supported and w
   - [shorten your code](https://stackoverflow.com/help/minimal-reproducible-example) to isolate what variables you want to visualize
   - remove unnecessary variables and objects
   - for Python, [use pythontutor_hide](https://www.youtube.com/watch?v=Mxt9HZWgwAM&list=PLzV58Zm8FuBL2WxxZKGZ6j1dH8NKb_HYI&index=6) to selectively hide variables
+- Advanced language features or subtleties that only experts need to know (this is a tool for teaching *novices*)
 - Visualizing custom data structures from imported libraries; Python Tutor visualizes only built-in types and data structures
 - Importing most external libraries (try "Python 3.6 with Anaconda (experimental)" to access more libraries)
 - Reading data from external files (you can use strings to emulate files: examples for [Python3](http://goo.gl/uNvBGl) and [Python2](http://goo.gl/Q9xQ4p))
 - Interfacing with databases, filesystems, networking, or other external resources
 - Anything involving GUI programming or GUI/webpage components
 - Multi-threaded, concurrent, or asynchronous code; Python Tutor is only for regular single-threaded execution
-- Advanced language features or subtleties that only experts need to know (this is a tool for teaching *novices*)
 - Compile-time magic (e.g., macros, metaprogramming, templates) can't be visualized; Python Tutor visualizes only run-time memory state
 - Editing multiple source code files (Python Tutor is not an IDE!)
 - User accounts, saving code as files in the cloud, or integrating with online services like GitHub (again, Python Tutor is not an IDE!)
@@ -93,7 +93,8 @@ Look at these GitHub issues for more C/C++ unsupported features: https://github.
 - anything that operates on webpages, such as DOM manipulation, alert(), prompt(), confirm(), etc.
   - this includes trying to import frontend libraries or frameworks (e.g., jQuery, React)
 - Date() object
-- known bug: for-loop variables show up *duplicated* in two nested blocks due to how the Node.js JavaScript debugger emits its values ([see GitHub issue](https://github.com/pgbovine/OnlinePythonTutor/issues/264) for details)
+- for-loop variables show up *duplicated* in two nested blocks due to how the Node.js JavaScript debugger emits its values ([see GitHub issue](https://github.com/pgbovine/OnlinePythonTutor/issues/264) for details)
+- features that novices don't usually need to know about, like adding object fields to an array, which can be confusing ([example code](http://pythontutor.com/visualize.html#code=let%20a%20%3D%20%5B'apples',%202,%20true%5D%3B%20//%20array%0A//%20if%20you%20add%20object%20fields%20to%20arrays%20%28or%20other%20types%29,%20we%20don't%20visualize%20it%0Aa.myName%20%3D%20%22Philip%22%0Aa.myNumber%20%3D%2042%3B%0Aconsole.log%28a,%20a.myName,%20a.myNumber%29%3B&cumulative=false&curInstr=4&heapPrimitives=nevernest&mode=display&origin=opt-frontend.js&py=js&rawInputLstJSON=%5B%5D&textReferences=false))
 - more JavaScript unsupported features: https://github.com/pgbovine/OnlinePythonTutor/issues?q=is%3Aissue+is%3Aopen+label%3Ajavascript
 
 ### Java unsupported features
