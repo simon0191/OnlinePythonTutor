@@ -69,7 +69,7 @@ Due to this ultra-focused design, the following features are not supported and w
 - memory leaks: leaked memory is not visualized since nothing points to it
 - some complex typedefs
 - function pointers
-- if pointers of different types point to the same memory block, unexpected things may happen; e.g., if an int* and a char* point to the same block of memory, it may be visualized as either an int or a char array (see [type punning](https://blog.regehr.org/archives/959))
+- if pointers of different types point to the same memory block, unexpected things may happen; e.g., if an int* and a char* point to the same block of memory, it may be visualized as either an int or a char array (see [type punning](https://blog.regehr.org/archives/959)) (see [GitHub issue](https://github.com/pgbovine/opt-cpp-backend/issues/83))
 - bitfields
 - alternative representations of memory like viewing individual bits or bytes
 - [stack arrays without compile-time sizes](https://github.com/pgbovine/opt-cpp-backend/issues/44)
