@@ -1174,7 +1174,7 @@ class DataVisualizer {
   classAttrsHidden: any = {}; // kludgy hack for 'show/hide attributes' for class objects
 
   GLOBAL_PREFIX = 'global';
-  UNNAMED_FUNCNAME = '<unnamed>';
+  UNNAMED_PREFIX = '<unnamed>';
 
   constructor(owner, domRoot, domRootD3) {
     this.owner = owner;
@@ -1360,7 +1360,7 @@ class DataVisualizer {
 
       $.each(curEntry.stack_to_render, function(i, frame) {
         // some functions are unnamed, so use a placeholder:
-        let func_prefix = frame.func_name ? frame.func_name : me.UNNAMED_FUNCNAME;
+        let func_prefix = frame.func_name ? frame.func_name : me.UNNAMED_PREFIX;
         $.each(frame.ordered_varnames, function(xxx, varname) {
           let encodedVarname = func_prefix + ':' + varname;
           if (allVarnames.indexOf(encodedVarname) < 0) { // don't insert duplicates
@@ -1379,14 +1379,45 @@ class DataVisualizer {
     let me = this;
     let allFieldnames = [];
 
-    $.each(this.curTrace, function(i, curEntry) {
-      //console.log(i, curEntry);
+    // copied from recurseIntoCStructArray ...
+    function traverseCStructArray(val) {
+      if (val[0] == 'C_STRUCT') {
+        // grab all field names and add to allFieldnames
+        let structName = val[2];
+        if (!structName) {
+          structName = me.UNNAMED_PREFIX;
+        }
 
-      // TODO: what about C/C++ objects that are on the stack?!? we should
-      // recurse into those too, right?
-      // ... also, what about C/C++ objects that are EMBEDDED within
-      // other heap objects? we may need to recurse into heap objects
-      // themselves to get at all of that, ergh!!!
+        $.each(val, function(ind, kvPair) {
+          if (ind < 3) return; // these have 3 header fields
+          let fieldName = kvPair[0];
+          let encodedFieldname = structName + ':' + fieldName;
+          if (allFieldnames.indexOf(encodedFieldname) < 0) { // don't insert duplicates
+            allFieldnames.push(encodedFieldname);
+          }
+        });
+      }
+
+      // recurse inside if necessary ...
+      if (val[0] === 'C_ARRAY') {
+        $.each(val, function(ind, elt) {
+          if (ind < 2) return; // these have 2 header fields
+          traverseCStructArray(elt);
+        });
+      } else if (val[0] === 'C_MULTIDIMENSIONAL_ARRAY' || val[0] === 'C_STRUCT') {
+        $.each(val, function(ind, kvPair) {
+          if (ind < 3) return; // these have 3 header fields
+          traverseCStructArray(kvPair[1]);
+        });
+      }
+    }
+
+    $.each(this.curTrace, function(i, curEntry) {
+      console.log(i, curEntry);
+
+      // TODO: what about C/C++ objects that are directly on the stack instead
+      // of on the heap? we should recurse into those too, right?
+      // TODO: test on http://localhost:8003/pytutor-c-embed2.html
 
       // iterate through the heap looking for relevant objects
       // expected format from ../pg_encoder.py
@@ -1396,15 +1427,27 @@ class DataVisualizer {
       // #   * class    - ['CLASS', class name, [list of superclass names], [attr1, value1], [attr2, value2], ..., [attrN, valueN]]
       $.each(curEntry.heap, function(k, obj) {
         let typ = obj[0];
-        let startingInd = -1;
-        let className = ''; // default
-        if (typ == 'DICT') {
-          //console.log(' ', obj);
-          startingInd = 1;
-        } else if (typ == 'INSTANCE' || typ == 'INSTANCE_PPRINT' || typ == 'CLASS') {
-          className = obj[1]; // could still be '' in many cases
-          startingInd = (typ == 'INSTANCE') ? 2 : 3;
-          //console.log(' ', obj);
+        if (typ == 'DICT' || typ == 'INSTANCE' || typ == 'INSTANCE_PPRINT' || typ == 'CLASS') {
+          let startingInd;
+          let className = ''; // default blank
+          if (typ == 'DICT') {
+            startingInd = 1;
+          } else if (typ == 'INSTANCE') {
+            startingInd = 2;
+            className = obj[1]; // could still be '' in many cases
+          } else {
+            startingInd = 3;
+            className = obj[1]; // could still be '' in many cases
+          }
+
+          for (let i = startingInd; i < obj.length; i++) {
+            let fieldName = obj[i][0];
+            // className can possibly be null ...
+            let encodedFieldname = className ? className + ':' + fieldName : fieldName;
+            if (allFieldnames.indexOf(encodedFieldname) < 0) { // don't insert duplicates
+              allFieldnames.push(encodedFieldname);
+            }
+          }
         } else if (typ == 'JS_FUNCTION') {
           let funcProperties = obj[3];
           if (funcProperties) {
@@ -1420,23 +1463,8 @@ class DataVisualizer {
             }
           }
           // don't set startingInd since we already handled this case above
-        }
-
-        // TODO: handle C/C++ types too
-
-        // we found an object with field names!!!
-        if (startingInd > 0) {
-          for (let i = startingInd; i < obj.length; i++) {
-            let fieldName = obj[i][0];
-            //console.log(className, fieldName);
-
-            // className can possibly be null ...
-            let encodedFieldname = className ? className + ':' + fieldName : fieldName;
-
-            if (allFieldnames.indexOf(encodedFieldname) < 0) { // don't insert duplicates
-              allFieldnames.push(encodedFieldname);
-            }
-          }
+        } else if (typ == 'C_ARRAY' || typ == 'C_MULTIDIMENSIONAL_ARRAY' || typ == 'C_STRUCT') {
+          traverseCStructArray(obj);
         }
       });
     });
