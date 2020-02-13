@@ -1173,6 +1173,9 @@ class DataVisualizer {
 
   classAttrsHidden: any = {}; // kludgy hack for 'show/hide attributes' for class objects
 
+  GLOBAL_PREFIX = 'global';
+  UNNAMED_FUNCNAME = '<unnamed>';
+
   constructor(owner, domRoot, domRootD3) {
     this.owner = owner;
     this.params = this.owner.params;
@@ -1340,6 +1343,107 @@ class DataVisualizer {
       renderedHeapObjectIDs: d3.map(), // format given by generateHeapObjID()
     };
   }
+
+
+  // gets all global and local variable names used in this program
+  // execution as indicated by this.curTrace
+  getAllProgramVarnames() {
+    let me = this;
+    let allVarnames = [];
+    $.each(this.curTrace, function(i, curEntry) {
+      $.each(curEntry.ordered_globals, function(i, varname) {
+        let encodedVarname = me.GLOBAL_PREFIX + ':' + varname;
+        if (allVarnames.indexOf(encodedVarname) < 0) { // don't insert duplicates
+          allVarnames.push(encodedVarname);
+        }
+      });
+
+      $.each(curEntry.stack_to_render, function(i, frame) {
+        // some functions are unnamed, so use a placeholder:
+        let func_prefix = frame.func_name ? frame.func_name : me.UNNAMED_FUNCNAME;
+        $.each(frame.ordered_varnames, function(xxx, varname) {
+          let encodedVarname = func_prefix + ':' + varname;
+          if (allVarnames.indexOf(encodedVarname) < 0) { // don't insert duplicates
+            allVarnames.push(encodedVarname);
+          }
+        });
+      });
+    });
+
+    return allVarnames;
+  }
+
+  // gets all field names of classes, objects, dicts, C structs, and anything
+  // else that has attribute/field names, as indicated by this.curTrace
+  getAllProgramObjectFieldNames() {
+    let me = this;
+    let allFieldnames = [];
+
+    $.each(this.curTrace, function(i, curEntry) {
+      //console.log(i, curEntry);
+
+      // TODO: what about C/C++ objects that are on the stack?!? we should
+      // recurse into those too, right?
+      // ... also, what about C/C++ objects that are EMBEDDED within
+      // other heap objects? we may need to recurse into heap objects
+      // themselves to get at all of that, ergh!!!
+
+      // iterate through the heap looking for relevant objects
+      // expected format from ../pg_encoder.py
+      // #   * dict     - ['DICT', [key1, value1], [key2, value2], ..., [keyN, valueN]]
+      // #   * instance - ['INSTANCE', class name, [attr1, value1], [attr2, value2], ..., [attrN, valueN]]
+      // #   * instance with non-trivial __str__ defined - ['INSTANCE_PPRINT', class name, <__str__ value>, [attr1, value1], [attr2, value2], ..., [attrN, valueN]]
+      // #   * class    - ['CLASS', class name, [list of superclass names], [attr1, value1], [attr2, value2], ..., [attrN, valueN]]
+      $.each(curEntry.heap, function(k, obj) {
+        let typ = obj[0];
+        let startingInd = -1;
+        let className = ''; // default
+        if (typ == 'DICT') {
+          //console.log(' ', obj);
+          startingInd = 1;
+        } else if (typ == 'INSTANCE' || typ == 'INSTANCE_PPRINT' || typ == 'CLASS') {
+          className = obj[1]; // could still be '' in many cases
+          startingInd = (typ == 'INSTANCE') ? 2 : 3;
+          //console.log(' ', obj);
+        } else if (typ == 'JS_FUNCTION') {
+          let funcProperties = obj[3];
+          if (funcProperties) {
+            let funcName = obj[1];
+            // special-case handling: prefix with function name if appropriate
+            for (let i = 0; i < funcProperties.length; i++) {
+              let fieldName = funcProperties[i][0];
+              // funcName can possibly be empty ...
+              let encodedFieldname = funcName ? funcName + ':' + fieldName : fieldName;
+              if (allFieldnames.indexOf(encodedFieldname) < 0) { // don't insert duplicates
+                allFieldnames.push(encodedFieldname);
+              }
+            }
+          }
+          // don't set startingInd since we already handled this case above
+        }
+
+        // TODO: handle C/C++ types too
+
+        // we found an object with field names!!!
+        if (startingInd > 0) {
+          for (let i = startingInd; i < obj.length; i++) {
+            let fieldName = obj[i][0];
+            //console.log(className, fieldName);
+
+            // className can possibly be null ...
+            let encodedFieldname = className ? className + ':' + fieldName : fieldName;
+
+            if (allFieldnames.indexOf(encodedFieldname) < 0) { // don't insert duplicates
+              allFieldnames.push(encodedFieldname);
+            }
+          }
+        }
+      });
+    });
+
+    return allFieldnames;
+  }
+
 
   // this method initializes curTraceLayouts
   //
@@ -4012,6 +4116,17 @@ class NavigationController {
       }).val('StateMachine').change(); // <-- trigger a change event on this
                                        // initial setting to get the change
                                        // handler above to run
+
+
+      // set up infrastructure for showing/hiding variables / object fields
+      //let allVarnames = this.owner.dataViz.getAllProgramVarnames();
+      //console.log(allVarnames);
+      //let allFieldnames = this.owner.dataViz.getAllProgramObjectFieldNames();
+      //console.log(allFieldnames);
+
+      // TODO: use htmlspecialchars to escape allVarnames and
+      // allFieldnames contents before printing to HTML
+
       return false; // don't follow the link and reload the page!
     });
   }
