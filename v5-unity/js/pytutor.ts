@@ -1380,6 +1380,7 @@ class DataVisualizer {
     let allFieldnames = [];
 
     // copied from recurseIntoCStructArray ...
+    // see inside comments for an optimization opportunity:
     function traverseCStructArray(val) {
       if (val[0] == 'C_STRUCT') {
         // grab all field names and add to allFieldnames
@@ -1399,6 +1400,13 @@ class DataVisualizer {
       }
 
       // recurse inside if necessary ...
+      //
+      // TODO: if you really want to make this more efficient
+      // (especially for huge arrays), you can simply traverse into the
+      // *first element* of C_ARRAY or C_MULTIDIMENSIONAL_ARRAY since
+      // they're supposedly homogeneous, so the type of the first element
+      // should be identical to the type of all other elements :)
+      // (just beware of the case of empty (zero-sized) arrays, though)
       if (val[0] === 'C_ARRAY') {
         $.each(val, function(ind, elt) {
           if (ind < 2) return; // these have 2 header fields
@@ -1413,11 +1421,7 @@ class DataVisualizer {
     }
 
     $.each(this.curTrace, function(i, curEntry) {
-      console.log(i, curEntry);
-
-      // TODO: what about C/C++ objects that are directly on the stack instead
-      // of on the heap? we should recurse into those too, right?
-      // TODO: test on http://localhost:8003/pytutor-c-embed2.html
+      //console.log(i, curEntry);
 
       // iterate through the heap looking for relevant objects
       // expected format from ../pg_encoder.py
@@ -1467,6 +1471,25 @@ class DataVisualizer {
           traverseCStructArray(obj);
         }
       });
+
+
+      // C and C++ objects can exist directly within the global frame or
+      // stack frames (not just on the heap), so we need to traverse
+      // through those as well
+      if (me.isCppMode()) {
+        $.each(curEntry.ordered_globals, function(i, varname) {
+          let val = curEntry.globals[varname];
+          traverseCStructArray(val);
+        });
+
+        // iterate thru all stack frames
+        $.each(curEntry.stack_to_render, function(i, frame) {
+          $.each(frame.ordered_varnames, function(xxx, varname) {
+            let val = frame.encoded_locals[varname];
+            traverseCStructArray(val);
+          });
+        });
+      }
     });
 
     return allFieldnames;
@@ -4147,10 +4170,10 @@ class NavigationController {
 
 
       // set up infrastructure for showing/hiding variables / object fields
-      //let allVarnames = this.owner.dataViz.getAllProgramVarnames();
-      //console.log(allVarnames);
-      //let allFieldnames = this.owner.dataViz.getAllProgramObjectFieldNames();
-      //console.log(allFieldnames);
+      let allVarnames = this.owner.dataViz.getAllProgramVarnames();
+      console.log('vars', allVarnames);
+      let allFieldnames = this.owner.dataViz.getAllProgramObjectFieldNames();
+      console.log('fields', allFieldnames);
 
       // TODO: use htmlspecialchars to escape allVarnames and
       // allFieldnames contents before printing to HTML
