@@ -84,6 +84,29 @@ function multiplyLists(a, b) {
   return ret;
 }
 
+
+// BEGIN utilities for selectively hiding variables
+
+// use htmlspecialchars to escape contents before printing to HTML,
+// then UNDO &nbsp; -> ' ' since we want spaces to nicely line-wrap
+// instead of being non-breaking
+function varlistToHtml(lst) {
+  return htmlspecialchars(lst.join(", ")).replace(/&nbsp;/g, ' ');
+}
+
+// take a string of something to hide, replace newlines with ','
+// so users can conveniently use newlines as delimiters, then split
+// by ',', filter out empty entries, and return trimmed ones:
+function processHideString(s) {
+  return s.replace(/\n/g, ',')
+           .split(',')
+           .filter(e=>e.trim().length > 0)
+           .map(e=>e.trim());
+}
+
+// END utilities for selectively hiding variables
+
+
 var newlineAllRegex = new RegExp('\n', 'g');
 var doubleQuoteAllRegex = new RegExp('\"', 'g');
 var tabAllRegex = new RegExp("\t", 'g');
@@ -1187,6 +1210,7 @@ class DataVisualizer {
     this.draggedHeapObjectCSS = d3.map(); // see above for description
 
     var codeVizHTML = `
+      <div id="selectiveHideStatus"></div>
       <div id="dataViz">
          <table id="stackHeapTable">
            <tr>
@@ -3532,6 +3556,32 @@ class DataVisualizer {
     this.jsPlumbInstance.repaintEverything();
   }
 
+
+  // selectively hiding variables or fields
+  //
+  // note that C++ uses '::' in member function names, so for
+  // the names in hideVarsLst and hideFieldsLst, we can't
+  // reliably split on ':' to reconstruct its original function/class
+  // name and its variable name. e.g., "Computer::setspeed(int):p"
+  //
+  // the more robust strategy is to keep this string intact and try to
+  // reconstruct it when matching up with variables in the execution trace
+  // ... but consider the case where there are NO COLONS in the string,
+  // which indicates a variable/field name that should be matched
+  // regardless of what function/object it belongs to
+  selectivelyHideVarsAndFields(hideVarsLst, hideFieldsLst) {
+    let shs = this.domRoot.find('#selectiveHideStatus');
+    shs.empty(); // start from scratch!
+    if (hideVarsLst.length > 0) {
+      shs.append("Hiding variables: " + varlistToHtml(hideVarsLst));
+    }
+    if (hideFieldsLst.length > 0) {
+      shs.append("<p/>Hiding object fields: " + varlistToHtml(hideFieldsLst));
+    }
+
+    // TODO: selectively hide these fields and redraw everything
+  }
+
 } // END class DataVisualizer
 
 class ProgramOutputBox {
@@ -4076,6 +4126,16 @@ class NavigationController {
           <div style="margin-top: 10px;" class="sliderWrapper">Arrow length: <input type="range" min="1" max="30" value="10" class="jsplumbOptionSlider" id="arrowLength"><span class="sliderVal">10</span></div>\
           <div class="sliderWrapper">Arrow width: <input type="range" min="1" max="30" value="7" class="jsplumbOptionSlider" id="arrowWidth"><span class="sliderVal">7</span></div>\
           <div class="sliderWrapper">Arrow fold: <input type="range" min="0" max="1" value="0.55" step="0.05" class="jsplumbOptionSlider" id="arrowFoldback"><span class="sliderVal">0.55</span></div>\
+          <div id="selectiveHideDiv" style="margin-top: 15px; padding: 6px 6px 6px 6px; border: 1px solid black;">\
+            All choices below; use part after colon to match all variables/fields with that name.<br/>\
+            <button id="updateHideVarsBtn" style="margin-top: 8px;">Update visualization</button>\
+            <p/>Hide these variables:<br/>\
+            <textarea id="hideVars" rows="4" cols="70"/>\
+            <div id="hideVarsChoices" style="width: 500px;"></div>\
+            <p style="margin-top: 15px;"/>Hide these object fields:<br/>\
+            <textarea id="hideFields" rows="4" cols="70"/>\
+            <div id="hideFieldsChoices" style="width: 500px;"></div>\
+          </div>\
         </div>\
       ');
 
@@ -4171,12 +4231,19 @@ class NavigationController {
 
       // set up infrastructure for showing/hiding variables / object fields
       let allVarnames = this.owner.dataViz.getAllProgramVarnames();
-      console.log('vars', allVarnames);
       let allFieldnames = this.owner.dataViz.getAllProgramObjectFieldNames();
-      console.log('fields', allFieldnames);
 
-      // TODO: use htmlspecialchars to escape allVarnames and
-      // allFieldnames contents before printing to HTML
+      let varnameChoices = varlistToHtml(allVarnames);
+      let fieldnameChoices = varlistToHtml(allFieldnames);
+
+      uiControlsPane.find('#hideVarsChoices').html(varnameChoices);
+      uiControlsPane.find('#hideFieldsChoices').html(fieldnameChoices);
+
+      uiControlsPane.find('#updateHideVarsBtn').click(() => {
+        let hideVarsLst = processHideString(uiControlsPane.find('#hideVars').val());
+        let hideFieldsLst = processHideString(uiControlsPane.find('#hideFields').val());
+        this.owner.dataViz.selectivelyHideVarsAndFields(hideVarsLst, hideFieldsLst);
+      });
 
       return false; // don't follow the link and reload the page!
     });
