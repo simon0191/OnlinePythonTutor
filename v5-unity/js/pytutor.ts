@@ -1469,17 +1469,8 @@ class DataVisualizer {
       $.each(curEntry.heap, function(k, obj) {
         let typ = obj[0];
         if (typ == 'INSTANCE' || typ == 'INSTANCE_PPRINT' || typ == 'CLASS') {
-          let startingInd;
-          let className = ''; // default blank
-          if (typ == 'INSTANCE') {
-            startingInd = 2;
-            className = obj[1]; // could still be '' in many cases
-          } else {
-            startingInd = 3;
-            className = obj[1]; // could still be '' in many cases
-          }
-
-          for (let i = startingInd; i < obj.length; i++) {
+          let [className, headerLength] = DataVisualizer.getClassInstanceMetadata(obj);
+          for (let i = headerLength; i < obj.length; i++) {
             let fieldName = obj[i][0];
             // className can possibly be null ...
             let encodedFieldname = className ? className + ':' + fieldName : fieldName;
@@ -1664,12 +1655,12 @@ class DataVisualizer {
           });
         }
         else if (heapObj[0] == 'INSTANCE' || heapObj[0] == 'INSTANCE_PPRINT' || heapObj[0] == 'CLASS') {
+          let [className, headerLength] = DataVisualizer.getClassInstanceMetadata(heapObj);
           jQuery.each(heapObj, function(ind, child) {
-            var headerLength = (heapObj[0] == 'INSTANCE') ? 2 : 3;
             if (ind < headerLength) return;
 
             var instKey = child[0];
-            //console.log('instKey', instKey);
+            //console.log('instKey', className, instKey);
             if (!myViz.isPrimitiveType(instKey)) {
               var keyChildID = getRefID(instKey);
               if (!myViz.owner.shouldNestObject(curEntry.heap[keyChildID])) {
@@ -3236,7 +3227,7 @@ class DataVisualizer {
     else if (obj[0] == 'INSTANCE' || obj[0] == 'INSTANCE_PPRINT' || obj[0] == 'CLASS') {
       var isInstance = (obj[0] == 'INSTANCE');
       var isPprintInstance = (obj[0] == 'INSTANCE_PPRINT');
-      var headerLength = isInstance ? 2 : 3;
+      let [className, headerLength] = DataVisualizer.getClassInstanceMetadata(obj);
 
       assert(obj.length >= headerLength);
 
@@ -3303,7 +3294,7 @@ class DataVisualizer {
       // we can restore it when we re-render this object at other
       // execution steps
       if (!isInstance) {
-        var className = obj[1];
+        let className = obj[1];
         d3DomElement.find('.typeLabel #attrToggleLink').click(function() {
           var elt = d3DomElement.find('.classTbl');
           elt.toggle();
@@ -3611,18 +3602,27 @@ class DataVisualizer {
     this.renderDataStructures(this.owner.curInstr); // render current step again
   }
 
+  // precondition: obj[0] is in {'INSTANCE', 'INSTANCE_PPRINT', 'CLASS'}
+  // returns: [class name, header length]
+  static getClassInstanceMetadata(obj) {
+    let typ = obj[0];
+    assert(typ == 'INSTANCE' || typ == 'INSTANCE_PPRINT' || typ == 'CLASS');
+    let className = obj[1]; // might possibly be ''
+    let headerLength = (typ == 'INSTANCE') ? 2 : 3;
+    return [className, headerLength];
+  }
 
   // returns true if funcname:varname is in this.hideVarsSet
   // OR if varname alone (without a funcname qualifier) is in this.hideVarsSet
   inHideVarsSet(funcname, varname) {
-    return this._inHideSetHelper(this.hideVarsSet, funcname, varname);
+    return DataVisualizer._inHideSetHelper(this.hideVarsSet, funcname, varname);
   }
   // same as inHideVarsSet except for classname/fieldname in this.hideFieldsSet
   inHideFieldsSet(classname, fieldname) {
-    return this._inHideSetHelper(this.hideFieldsSet, classname, fieldname);
+    return DataVisualizer._inHideSetHelper(this.hideFieldsSet, classname, fieldname);
   }
 
-  _inHideSetHelper(myMap, first, second) {
+  static _inHideSetHelper(myMap, first, second) {
     if (!myMap) {
       return false;
     } else {
