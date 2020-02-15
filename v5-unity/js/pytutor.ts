@@ -1189,12 +1189,17 @@ class DataVisualizer {
   // but this is an acceptable level of jank for now)
   draggedHeapObjectCSS: any;
 
-  curTraceLayouts: any[];
+  curTraceLayouts: any[]; // initialized in precomputeCurTraceLayouts
 
   jsPlumbInstance: any;
   jsPlumbManager: any;
 
   classAttrsHidden: any = {}; // kludgy hack for 'show/hide attributes' for class objects
+
+  // for selectively hiding variables and fields: d3.map used as a set,
+  // with variable/field name as keys (and true as values)
+  hideVarsSet: any;
+  hideFieldsSet: any;
 
   GLOBAL_PREFIX = 'global';
   UNNAMED_PREFIX = '<unnamed>';
@@ -1206,6 +1211,9 @@ class DataVisualizer {
 
     this.domRoot = domRoot;
     this.domRootD3 = domRootD3;
+
+    this.hideVarsSet = null;
+    this.hideFieldsSet = null;
 
     this.draggedHeapObjectCSS = d3.map(); // see above for description
 
@@ -1447,20 +1455,23 @@ class DataVisualizer {
     $.each(this.curTrace, function(i, curEntry) {
       //console.log(i, curEntry);
 
-      // iterate through the heap looking for relevant objects
+      // iterate through the heap looking for relevant objects with fields
       // expected format from ../pg_encoder.py
-      // #   * dict     - ['DICT', [key1, value1], [key2, value2], ..., [keyN, valueN]]
       // #   * instance - ['INSTANCE', class name, [attr1, value1], [attr2, value2], ..., [attrN, valueN]]
       // #   * instance with non-trivial __str__ defined - ['INSTANCE_PPRINT', class name, <__str__ value>, [attr1, value1], [attr2, value2], ..., [attrN, valueN]]
       // #   * class    - ['CLASS', class name, [list of superclass names], [attr1, value1], [attr2, value2], ..., [attrN, valueN]]
+      //
+      // also for javascript, JS_FUNCTION objects may have funcProperties
+      //
+      // [NB: we don't count DICT here since those don't technically contain
+      // 'fields'; they contain dict keys, which don't necessarily need to be
+      // strings, so it's confusing to try to ignore a non-string dict key]
       $.each(curEntry.heap, function(k, obj) {
         let typ = obj[0];
-        if (typ == 'DICT' || typ == 'INSTANCE' || typ == 'INSTANCE_PPRINT' || typ == 'CLASS') {
+        if (typ == 'INSTANCE' || typ == 'INSTANCE_PPRINT' || typ == 'CLASS') {
           let startingInd;
           let className = ''; // default blank
-          if (typ == 'DICT') {
-            startingInd = 1;
-          } else if (typ == 'INSTANCE') {
+          if (typ == 'INSTANCE') {
             startingInd = 2;
             className = obj[1]; // could still be '' in many cases
           } else {
@@ -1490,7 +1501,6 @@ class DataVisualizer {
               }
             }
           }
-          // don't set startingInd since we already handled this case above
         } else if (typ == 'C_ARRAY' || typ == 'C_MULTIDIMENSIONAL_ARRAY' || typ == 'C_STRUCT') {
           traverseCStructArray(obj);
         }
@@ -1528,7 +1538,11 @@ class DataVisualizer {
   // heap objects don't "jiggle around" (i.e., preserving positional
   // invariance). Also, if we set up the layout objects properly, then we
   // can take full advantage of d3 to perform rendering and transitions.
+  //
+  // (also call this function whenever the user chooses to selectively
+  //  hide/show variables/objects, since we want to get the latest layout)
   precomputeCurTraceLayouts() {
+    //console.log('precomputeCurTraceLayouts');
     // curTraceLayouts is a list of top-level heap layout "objects" with the
     // same length as curTrace after it's been fully initialized. Each
     // element of curTraceLayouts is computed from the contents of its
@@ -1655,6 +1669,7 @@ class DataVisualizer {
             if (ind < headerLength) return;
 
             var instKey = child[0];
+            //console.log('instKey', instKey);
             if (!myViz.isPrimitiveType(instKey)) {
               var keyChildID = getRefID(instKey);
               if (!myViz.owner.shouldNestObject(curEntry.heap[keyChildID])) {
@@ -1694,6 +1709,9 @@ class DataVisualizer {
           if (funcProperties) {
             assert(funcProperties.length > 0);
             $.each(funcProperties, function(ind, kvPair) {
+              var instKey = kvPair[0];
+              //console.log('funcProperties::instKey', instKey);
+
               // copy/paste from INSTANCE/CLASS code above
               var instVal = kvPair[1];
               if (!myViz.isPrimitiveType(instVal)) {
@@ -2003,6 +2021,7 @@ class DataVisualizer {
   // of data structure aliasing. That is, aliased objects were rendered
   // multiple times, and a unique ID label was used to identify aliases.
   renderDataStructures(curInstr: number) {
+    //console.log('renderDataStructures', curInstr);
     var myViz = this; // to prevent confusion of 'this' inside of nested functions
 
     var curEntry = this.curTrace[curInstr];
@@ -3574,12 +3593,41 @@ class DataVisualizer {
     shs.empty(); // start from scratch!
     if (hideVarsLst.length > 0) {
       shs.append("Hiding variables: " + varlistToHtml(hideVarsLst));
+      this.hideVarsSet = d3.map();
+      hideVarsLst.forEach(e => this.hideVarsSet.set(e, true));
+    } else {
+      this.hideVarsSet = null; // reset
     }
     if (hideFieldsLst.length > 0) {
       shs.append("<p/>Hiding object fields: " + varlistToHtml(hideFieldsLst));
+      this.hideFieldsSet = d3.map();
+      hideFieldsLst.forEach(e => this.hideFieldsSet.set(e, true));
+    } else {
+      this.hideFieldsSet = null; // reset
     }
 
-    // TODO: selectively hide these fields and redraw everything
+    // now that this.hideVarsSet and this.hideFieldsSet have been updated ...
+    this.precomputeCurTraceLayouts(); // recompute layouts to account for hidden vars/objects
+    this.renderDataStructures(this.owner.curInstr); // render current step again
+  }
+
+
+  // returns true if funcname:varname is in this.hideVarsSet
+  // OR if varname alone (without a funcname qualifier) is in this.hideVarsSet
+  inHideVarsSet(funcname, varname) {
+    return this._inHideSetHelper(this.hideVarsSet, funcname, varname);
+  }
+  // same as inHideVarsSet except for classname/fieldname in this.hideFieldsSet
+  inHideFieldsSet(classname, fieldname) {
+    return this._inHideSetHelper(this.hideFieldsSet, classname, fieldname);
+  }
+
+  _inHideSetHelper(myMap, first, second) {
+    if (!myMap) {
+      return false;
+    } else {
+      return myMap.has(first + ':' + second) || myMap.has(second);
+    }
   }
 
 } // END class DataVisualizer
