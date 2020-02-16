@@ -1699,10 +1699,15 @@ class DataVisualizer {
             assert(funcProperties.length > 0);
             let funcName = heapObj[1];
             $.each(funcProperties, function(ind, kvPair) {
-              var instKey = kvPair[0];
-              if (myViz.inHideFieldsSet(funcName, instKey)) {
-                console.log('precompute HIDING', funcName, instKey);
-                return; // get out!
+              // only check this for JS_FUNCTION! we're overloading
+              // funcProperties to use for both FUNCTION and
+              // JS_FUNCTION, which might be confusing ...
+              if (heapObj[0] == 'JS_FUNCTION') {
+                let instKey = kvPair[0];
+                if (myViz.inHideFieldsSet(funcName, instKey)) {
+                  console.log('precompute HIDING', funcName, instKey);
+                  return; // get out!
+                }
               }
 
               // copy/paste from INSTANCE/CLASS code above
@@ -3265,6 +3270,11 @@ class DataVisualizer {
         $.each(obj, function(ind, kvPair) {
           if (ind < headerLength) return; // skip header tags
 
+          if (myViz.inHideFieldsSet(className, kvPair[0])) {
+            console.log('render HIDING', className, kvPair[0]);
+            return; // get out!
+          }
+
           tbl.append('<tr class="' + lab + 'Entry"><td class="' + lab + 'Key"></td><td class="' + lab + 'Val"></td></tr>');
 
           var newRow = tbl.find('tr:last');
@@ -3344,7 +3354,14 @@ class DataVisualizer {
 
         if (funcProperties) {
           assert(funcProperties.length > 0);
+          let rawFuncName = obj[1];
           $.each(funcProperties, function(ind, kvPair) {
+              let instKey = kvPair[0];
+              if (myViz.inHideFieldsSet(rawFuncName, kvPair[0])) {
+                console.log('render HIDING', rawFuncName, kvPair[0]);
+                return; // get out!
+              }
+
               tbl.append('<tr class="classEntry"><td class="classKey"></td><td class="classVal"></td></tr>');
               var newRow = tbl.find('tr:last');
               var keyTd = newRow.find('td:first');
@@ -3416,8 +3433,15 @@ class DataVisualizer {
 
         var tbl = d3DomElement.children('table');
 
+        let structName = obj[2] ? obj[2] : DataVisualizer.UNNAMED_PREFIX;
         $.each(obj, function(ind, kvPair) {
           if (ind < 3) return; // skip header tags
+
+          let fieldName = kvPair[0];
+          if (myViz.inHideFieldsSet(structName, fieldName)) {
+            console.log('render HIDING', structName, fieldName);
+            return; // get out!
+          }
 
           tbl.append('<tr class="instEntry"><td class="instKey"></td><td class="instVal"></td></tr>');
 
