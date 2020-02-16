@@ -1194,8 +1194,6 @@ class DataVisualizer {
   jsPlumbInstance: any;
   jsPlumbManager: any;
 
-  classAttrsHidden: any = {}; // kludgy hack for 'show/hide attributes' for class objects
-
   // for selectively hiding variables and fields: d3.map used as a set,
   // with variable/field name as keys (and true as values)
   hideVarsSet: any;
@@ -3255,15 +3253,8 @@ class DataVisualizer {
         if (obj[2].length > 0) {
           superclassStr += ('[extends ' + obj[2].join(', ') + '] ');
         }
-        d3DomElement.append('<div class="typeLabel">' + typeLabelPrefix + obj[1] + ' class ' + superclassStr +
-                            '<br/>' + '<a href="javascript:void(0)" id="attrToggleLink">hide attributes</a>' + '</div>');
+        d3DomElement.append('<div class="typeLabel">' + typeLabelPrefix + obj[1] + ' class ' + superclassStr + '</div>');
       }
-
-      // right now, let's NOT display class members, since that clutters
-      // up the display too much. in the future, consider displaying
-      // class members in a pop-up pane on mouseover or mouseclick
-      // actually nix what i just said above ...
-      //if (!isInstance) return;
 
       if (obj.length > headerLength) {
         var lab = isInstance ? 'inst' : 'class';
@@ -3295,44 +3286,6 @@ class DataVisualizer {
           // values can be arbitrary objects, so recurse:
           myViz.renderNestedObject(kvPair[1], stepNum, valTd);
         });
-      }
-
-      // class attributes can be displayed or hidden, so as not to
-      // CLUTTER UP the display with a ton of attributes, especially
-      // from imported modules and custom types created from, say,
-      // collections.namedtuple
-      //
-      // TODO: make this a more general mechanism by which anything can
-      // be toggled hidden! one idea is to use a hidden data- field in
-      // each .heapObject to store its attribute toggle status, so that
-      // we can restore it when we re-render this object at other
-      // execution steps
-      if (!isInstance) {
-        let className = obj[1];
-        d3DomElement.find('.typeLabel #attrToggleLink').click(function() {
-          var elt = d3DomElement.find('.classTbl');
-          elt.toggle();
-          $(this).html((elt.is(':visible') ? 'hide' : 'show') + ' attributes');
-
-          if (elt.is(':visible')) {
-            myViz.classAttrsHidden[className] = false;
-            $(this).html('hide attributes');
-          }
-          else {
-            myViz.classAttrsHidden[className] = true;
-            $(this).html('show attributes');
-          }
-
-          myViz.redrawConnectors(); // redraw all arrows!
-          return false; // don't reload the page
-        });
-
-        // "remember" whether this was hidden earlier during this
-        // visualization session
-        if (myViz.classAttrsHidden[className]) {
-          d3DomElement.find('.classTbl').hide();
-          d3DomElement.find('.typeLabel #attrToggleLink').html('show attributes');
-        }
       }
     }
     else if (obj[0] == 'FUNCTION') {
