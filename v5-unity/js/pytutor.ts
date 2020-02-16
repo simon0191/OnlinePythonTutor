@@ -1201,8 +1201,8 @@ class DataVisualizer {
   hideVarsSet: any;
   hideFieldsSet: any;
 
-  GLOBAL_PREFIX = 'global';
-  UNNAMED_PREFIX = '<unnamed>';
+  static GLOBAL_PREFIX = 'global';
+  static UNNAMED_PREFIX = '<unnamed>';
 
   constructor(owner, domRoot, domRootD3) {
     this.owner = owner;
@@ -1384,7 +1384,7 @@ class DataVisualizer {
     let allVarnames = [];
     $.each(this.curTrace, function(i, curEntry) {
       $.each(curEntry.ordered_globals, function(i, varname) {
-        let encodedVarname = me.GLOBAL_PREFIX + ':' + varname;
+        let encodedVarname = DataVisualizer.GLOBAL_PREFIX + ':' + varname;
         if (allVarnames.indexOf(encodedVarname) < 0) { // don't insert duplicates
           allVarnames.push(encodedVarname);
         }
@@ -1392,7 +1392,7 @@ class DataVisualizer {
 
       $.each(curEntry.stack_to_render, function(i, frame) {
         // some functions are unnamed, so use a placeholder:
-        let func_prefix = frame.func_name ? frame.func_name : me.UNNAMED_PREFIX;
+        let func_prefix = frame.func_name ? frame.func_name : DataVisualizer.UNNAMED_PREFIX;
         $.each(frame.ordered_varnames, function(xxx, varname) {
           let encodedVarname = func_prefix + ':' + varname;
           if (allVarnames.indexOf(encodedVarname) < 0) { // don't insert duplicates
@@ -1416,10 +1416,7 @@ class DataVisualizer {
     function traverseCStructArray(val) {
       if (val[0] == 'C_STRUCT') {
         // grab all field names and add to allFieldnames
-        let structName = val[2];
-        if (!structName) {
-          structName = me.UNNAMED_PREFIX;
-        }
+        let structName = val[2] ? val[2] : DataVisualizer.UNNAMED_PREFIX;
 
         $.each(val, function(ind, kvPair) {
           if (ind < 3) return; // these have 3 header fields
@@ -1660,7 +1657,10 @@ class DataVisualizer {
             if (ind < headerLength) return;
 
             var instKey = child[0];
-            //console.log('instKey', className, instKey);
+            if (myViz.inHideFieldsSet(className, instKey)) {
+              console.log('precompute HIDING', className, instKey);
+              return; // get out!
+            }
             if (!myViz.isPrimitiveType(instKey)) {
               var keyChildID = getRefID(instKey);
               if (!myViz.owner.shouldNestObject(curEntry.heap[keyChildID])) {
@@ -1699,9 +1699,13 @@ class DataVisualizer {
 
           if (funcProperties) {
             assert(funcProperties.length > 0);
+            let funcName = heapObj[1];
             $.each(funcProperties, function(ind, kvPair) {
               var instKey = kvPair[0];
-              //console.log('funcProperties::instKey', instKey);
+              if (myViz.inHideFieldsSet(funcName, instKey)) {
+                console.log('precompute HIDING', funcName, instKey);
+                return; // get out!
+              }
 
               // copy/paste from INSTANCE/CLASS code above
               var instVal = kvPair[1];
@@ -1842,6 +1846,16 @@ class DataVisualizer {
         } else if (val[0] === 'C_MULTIDIMENSIONAL_ARRAY' || val[0] === 'C_STRUCT') {
           $.each(val, function(ind, kvPair) {
             if (ind < 3) return; // these have 3 header fields
+
+            if (val[0] === 'C_STRUCT') {
+              let structName = val[2] ? val[2] : DataVisualizer.UNNAMED_PREFIX;
+              let fieldName = kvPair[0];
+              if (myViz.inHideFieldsSet(structName, fieldName)) {
+                console.log('precompute HIDING', structName, fieldName);
+                return; // get out!
+              }
+            }
+
             updateCurLayoutAndRecurse(kvPair[1]);
           });
         }
@@ -3625,7 +3639,9 @@ class DataVisualizer {
   static _inHideSetHelper(myMap, first, second) {
     if (!myMap) {
       return false;
-    } else {
+    } else if (!first) { // only match on second, in that case
+      return myMap.has(second);
+    } else { // match on either first:second or second
       return myMap.has(first + ':' + second) || myMap.has(second);
     }
   }
