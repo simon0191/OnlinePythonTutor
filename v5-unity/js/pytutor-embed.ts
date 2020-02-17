@@ -10,10 +10,10 @@ var allVisualizers = [];
 
 function redrawAllVisualizerArrows() {
   $.each(allVisualizers, (i, v) => {
-    console.log("redrawConnectors:", v);
+    //console.log("redrawConnectors:", v);
     v.redrawConnectors();
   });
-  console.log("DONE redrawAllVisualizerArrows");
+  //console.log("DONE redrawAllVisualizerArrows");
 }
 
 // creates a ExecutionVisualizer representing trace and adds it to page at divId

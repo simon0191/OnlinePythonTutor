@@ -1866,6 +1866,11 @@ class DataVisualizer {
 
       // iterate through all globals and ordered stack frames and call updateCurLayout
       $.each(curEntry.ordered_globals, function(i, varname) {
+        if (myViz.inHideVarsSet(DataVisualizer.GLOBAL_PREFIX, varname)) {
+          console.log('precompute HIDING', DataVisualizer.GLOBAL_PREFIX, varname);
+          return; // get out!
+        }
+
         var val = curEntry.globals[varname];
         if (val !== undefined) { // might not be defined at this line, which is OKAY!
           // TODO: try to unify this behavior between C/C++ and other languages:
@@ -1881,7 +1886,15 @@ class DataVisualizer {
       });
 
       $.each(curEntry.stack_to_render, function(i, frame) {
+        // some functions are unnamed, so use a placeholder:
+        let func_prefix = frame.func_name ? frame.func_name : DataVisualizer.UNNAMED_PREFIX;
+
         $.each(frame.ordered_varnames, function(xxx, varname) {
+          if (myViz.inHideVarsSet(func_prefix, varname)) {
+            console.log('precompute HIDING', func_prefix, varname);
+            return; // get out!
+          }
+
           var val = frame.encoded_locals[varname];
           // TODO: try to unify this behavior between C/C++ and other languages:
           if (myViz.isCppMode()) {
@@ -2217,6 +2230,11 @@ class DataVisualizer {
     // so filter those out.)
     var realGlobalsLst = [];
     $.each(curEntry.ordered_globals, function(i, varname) {
+      if (myViz.inHideVarsSet(DataVisualizer.GLOBAL_PREFIX, varname)) {
+        console.log('render HIDING', DataVisualizer.GLOBAL_PREFIX, varname);
+        return; // get out!
+      }
+
       var val = curEntry.globals[varname];
 
       // (use '!==' to do an EXACT match against undefined)
@@ -2450,11 +2468,24 @@ class DataVisualizer {
       .order() // VERY IMPORTANT to put in the order corresponding to data elements
       .select('table').selectAll('tr')
       .data(function(frame) {
-          // each list element contains a reference to the entire frame
-          // object as well as the variable name
-          // TODO: look into whether we can use d3 parent nodes to avoid
-          // this hack ... http://bost.ocks.org/mike/nest/
-          return frame.ordered_varnames.map(function(varname) {return {varname:varname, frame:frame};});
+          if (myViz.hideVarsSet) {
+            // filter out everything in hideVarsSet
+            let func_prefix = frame.func_name ? frame.func_name : DataVisualizer.UNNAMED_PREFIX;
+
+            // a bit inefficient since we call filter twice, but whateves :)
+            let hiddenVars = frame.ordered_varnames.filter(varname => myViz.inHideVarsSet(func_prefix, varname));
+            console.log('render HIDE', func_prefix, hiddenVars);
+
+            return frame.ordered_varnames
+                     .filter(varname => !myViz.inHideVarsSet(func_prefix, varname))
+                     .map(varname => {return {varname:varname, frame:frame};});
+          } else {
+            // each list element contains a reference to the entire frame
+            // object as well as the variable name
+            // TODO: look into whether we can use d3 parent nodes to avoid
+            // this hack ... http://bost.ocks.org/mike/nest/
+            return frame.ordered_varnames.map(function(varname) {return {varname:varname, frame:frame};});
+          }
         },
         function(d) {
           // TODO: why would d ever be null?!? weird
@@ -3591,6 +3622,7 @@ class DataVisualizer {
     // now that this.hideVarsSet and this.hideFieldsSet have been updated ...
     this.precomputeCurTraceLayouts(); // recompute layouts to account for hidden vars/objects
     this.renderDataStructures(this.owner.curInstr); // render current step again
+    //this.owner.updateOutput(); // alternatively, try this
   }
 
   // precondition: obj[0] is in {'INSTANCE', 'INSTANCE_PPRINT', 'CLASS'}
@@ -4146,9 +4178,11 @@ class NavigationController {
       this.customizeVizOptionsShown = true;
 
       uiControlsPane.append(' \
-        <div style="margin-top: 5px;"/>\
-          (move objects around by <b>dragging</b>, but their positions won\'t be shared in URL or live chat)\
-          <div style="margin-top: 8px; margin-bottom: 5px;">\
+        <div style="margin-top: 8px;"/>\
+          <font color="#e93f34">Warning:</font> Reloading this page loses all changes;\
+          customizations NOT shared in URL or chat sessions\
+          <p/><b>Drag</b> any object around to move it. Customize its pointers:\
+          <div style="margin-top: 12px; margin-bottom: 5px;">\
           Line style:\
           <select id="jsplumbConnectorType">\
             <option value="StateMachine" selected>Default</option>\
@@ -4164,17 +4198,18 @@ class NavigationController {
           <div class="sliderWrapper">Gap: <input type="range" min="0" max="50" value="0" class="jsplumbOptionSlider" id="gap"><span class="sliderVal">0</span></div>\
           <div class="sliderWrapper">Midpoint: <input type="range" min="0" max="10" value="0.5" step="0.5" class="jsplumbOptionSlider" id="midpoint"><span class="sliderVal">0.5</span></div>\
           <div class="sliderWrapper">CornerRadius: <input type="range" min="0" max="10" value="0" class="jsplumbOptionSlider" id="cornerRadius"><span class="sliderVal">0</span></div>\
-          <div style="margin-top: 10px;" class="sliderWrapper">Arrow length: <input type="range" min="1" max="30" value="10" class="jsplumbOptionSlider" id="arrowLength"><span class="sliderVal">10</span></div>\
+          <div class="sliderWrapper">Arrow length: <input type="range" min="1" max="30" value="10" class="jsplumbOptionSlider" id="arrowLength"><span class="sliderVal">10</span></div>\
           <div class="sliderWrapper">Arrow width: <input type="range" min="1" max="30" value="7" class="jsplumbOptionSlider" id="arrowWidth"><span class="sliderVal">7</span></div>\
           <div class="sliderWrapper">Arrow fold: <input type="range" min="0" max="1" value="0.55" step="0.05" class="jsplumbOptionSlider" id="arrowFoldback"><span class="sliderVal">0.55</span></div>\
           <div id="selectiveHideDiv" style="margin-top: 15px; padding: 6px 6px 6px 6px; border: 1px solid black;">\
-            All choices below; use part after colon to match all variables/fields with that name.<br/>\
+            <b>Hide variables/fields</b> (elements may end up out of order, so reload page to reset)<br/>\
             <button id="updateHideVarsBtn" style="margin-top: 8px;">Update visualization</button>\
+            <p/>All choices below; use part after colon to match all variables/fields with that name.\
             <p/>Hide these variables:<br/>\
-            <textarea id="hideVars" rows="4" cols="70"/>\
+            <textarea id="hideVars" rows="3" cols="70"/>\
             <div id="hideVarsChoices" style="width: 500px;"></div>\
             <p style="margin-top: 15px;"/>Hide these object fields:<br/>\
-            <textarea id="hideFields" rows="4" cols="70"/>\
+            <textarea id="hideFields" rows="3" cols="70"/>\
             <div id="hideFieldsChoices" style="width: 500px;"></div>\
           </div>\
         </div>\
