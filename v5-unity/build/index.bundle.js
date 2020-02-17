@@ -3063,10 +3063,24 @@ var DataVisualizer = /** @class */ (function () {
             if (myViz.varsHidden.length > 0 || myViz.fieldsHidden.length > 0) {
                 // printing hidden vars/fields may move elements in the heap visualization
                 if (myViz.varsHidden.length > 0) {
-                    shs.append("Hidden variables: " + varlistToHtml(myViz.varsHidden));
+                    // filter out duplicates:
+                    var varsHiddenNoDups_1 = [];
+                    myViz.varsHidden.forEach(function (e) {
+                        if (varsHiddenNoDups_1.indexOf(e) < 0) {
+                            varsHiddenNoDups_1.push(e);
+                        }
+                    });
+                    shs.append("Hidden variables: " + varlistToHtml(varsHiddenNoDups_1));
                 }
                 if (myViz.fieldsHidden.length > 0) {
-                    shs.append("<br/>Hidden object fields: " + varlistToHtml(myViz.fieldsHidden));
+                    // filter out duplicates:
+                    var fieldsHiddenNoDups_1 = [];
+                    myViz.fieldsHidden.forEach(function (e) {
+                        if (fieldsHiddenNoDups_1.indexOf(e) < 0) {
+                            fieldsHiddenNoDups_1.push(e);
+                        }
+                    });
+                    shs.append("<br/>Hidden object fields: " + varlistToHtml(fieldsHiddenNoDups_1));
                 }
             }
         }
@@ -4163,7 +4177,7 @@ var NavigationController = /** @class */ (function () {
             uiControlsPane.append(' \
         <div style="margin-top: 8px;"/>\
           <font color="#e93f34">Warning:</font> Reloading this page loses all changes;\
-          customizations NOT shared in URL or chat sessions\
+          customizations <em>NOT</em> shared in URL or chat sessions\
           <p/><b>Drag</b> any object around to move it. Customize its pointers:\
           <div style="margin-top: 12px; margin-bottom: 5px;">\
           Line style:\
