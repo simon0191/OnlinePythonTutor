@@ -2974,10 +2974,24 @@ class DataVisualizer {
       if (myViz.varsHidden.length > 0 || myViz.fieldsHidden.length > 0) {
         // printing hidden vars/fields may move elements in the heap visualization
         if (myViz.varsHidden.length > 0) {
-          shs.append("Hidden variables: " + varlistToHtml(myViz.varsHidden));
+          // filter out duplicates:
+          let varsHiddenNoDups = [];
+          myViz.varsHidden.forEach(e => {
+            if (varsHiddenNoDups.indexOf(e) < 0) {
+              varsHiddenNoDups.push(e);
+            }
+          });
+          shs.append("Hidden variables: " + varlistToHtml(varsHiddenNoDups));
         }
         if (myViz.fieldsHidden.length > 0) {
-          shs.append("<br/>Hidden object fields: " + varlistToHtml(myViz.fieldsHidden));
+          // filter out duplicates:
+          let fieldsHiddenNoDups = [];
+          myViz.fieldsHidden.forEach(e => {
+            if (fieldsHiddenNoDups.indexOf(e) < 0) {
+              fieldsHiddenNoDups.push(e);
+            }
+          });
+          shs.append("<br/>Hidden object fields: " + varlistToHtml(fieldsHiddenNoDups));
         }
       }
     }
@@ -4214,7 +4228,7 @@ class NavigationController {
       uiControlsPane.append(' \
         <div style="margin-top: 8px;"/>\
           <font color="#e93f34">Warning:</font> Reloading this page loses all changes;\
-          customizations NOT shared in URL or chat sessions\
+          customizations <em>NOT</em> shared in URL or chat sessions\
           <p/><b>Drag</b> any object around to move it. Customize its pointers:\
           <div style="margin-top: 12px; margin-bottom: 5px;">\
           Line style:\
