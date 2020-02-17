@@ -623,6 +623,23 @@ function multiplyLists(a, b) {
     }
     return ret;
 }
+// BEGIN utilities for selectively hiding variables
+// use htmlspecialchars to escape contents before printing to HTML,
+// then UNDO &nbsp; -> ' ' since we want spaces to nicely line-wrap
+// instead of being non-breaking
+function varlistToHtml(lst) {
+    return htmlspecialchars(lst.join(", ")).replace(/&nbsp;/g, ' ');
+}
+// take a string of something to hide, replace newlines with ','
+// so users can conveniently use newlines as delimiters, then split
+// by ',', filter out empty entries, and return trimmed ones:
+function processHideString(s) {
+    return s.replace(/\n/g, ',')
+        .split(',')
+        .filter(function (e) { return e.trim().length > 0; })
+        .map(function (e) { return e.trim(); });
+}
+// END utilities for selectively hiding variables
 var newlineAllRegex = new RegExp('\n', 'g');
 var doubleQuoteAllRegex = new RegExp('\"', 'g');
 var tabAllRegex = new RegExp("\t", 'g');
@@ -1515,14 +1532,15 @@ exports.ExecutionVisualizer = ExecutionVisualizer;
 // implements the data structure visualization for an entire trace
 var DataVisualizer = /** @class */ (function () {
     function DataVisualizer(owner, domRoot, domRootD3) {
-        this.classAttrsHidden = {}; // kludgy hack for 'show/hide attributes' for class objects
         this.owner = owner;
         this.params = this.owner.params;
         this.curTrace = this.owner.curTrace;
         this.domRoot = domRoot;
         this.domRootD3 = domRootD3;
+        this.hideVarsSet = null;
+        this.hideFieldsSet = null;
         this.draggedHeapObjectCSS = d3.map(); // see above for description
-        var codeVizHTML = "\n      <div id=\"dataViz\">\n         <table id=\"stackHeapTable\">\n           <tr>\n             <td id=\"stack_td\">\n               <div id=\"globals_area\">\n                 <div id=\"stackHeader\">" + this.getRealLabel("Frames") + "</div>\n               </div>\n               <div id=\"stack\"></div>\n             </td>\n             <td id=\"heap_td\">\n               <div id=\"heap\">\n                 <div id=\"heapHeader\">" + this.getRealLabel("Objects") + "</div>\n               </div>\n             </td>\n           </tr>\n         </table>\n       </div>";
+        var codeVizHTML = "\n      <div id=\"selectiveHideStatus\"></div>\n      <div id=\"dataViz\">\n         <table id=\"stackHeapTable\">\n           <tr>\n             <td id=\"stack_td\">\n               <div id=\"globals_area\">\n                 <div id=\"stackHeader\">" + this.getRealLabel("Frames") + "</div>\n               </div>\n               <div id=\"stack\"></div>\n             </td>\n             <td id=\"heap_td\">\n               <div id=\"heap\">\n                 <div id=\"heapHeader\">" + this.getRealLabel("Objects") + "</div>\n               </div>\n             </td>\n           </tr>\n         </table>\n       </div>";
         this.domRoot.append(codeVizHTML);
         // create a persistent globals frame
         // (note that we need to keep #globals_area separate from #stack for d3 to work its magic)
@@ -1662,6 +1680,139 @@ var DataVisualizer = /** @class */ (function () {
             renderedHeapObjectIDs: d3.map(),
         };
     };
+    // gets all global and local variable names used in this program
+    // execution as indicated by this.curTrace
+    DataVisualizer.prototype.getAllProgramVarnames = function () {
+        var me = this;
+        var allVarnames = [];
+        $.each(this.curTrace, function (i, curEntry) {
+            $.each(curEntry.ordered_globals, function (i, varname) {
+                var encodedVarname = DataVisualizer.GLOBAL_PREFIX + ':' + varname;
+                if (allVarnames.indexOf(encodedVarname) < 0) { // don't insert duplicates
+                    allVarnames.push(encodedVarname);
+                }
+            });
+            $.each(curEntry.stack_to_render, function (i, frame) {
+                // some functions are unnamed, so use a placeholder:
+                var func_prefix = frame.func_name ? frame.func_name : DataVisualizer.UNNAMED_PREFIX;
+                $.each(frame.ordered_varnames, function (xxx, varname) {
+                    var encodedVarname = func_prefix + ':' + varname;
+                    if (allVarnames.indexOf(encodedVarname) < 0) { // don't insert duplicates
+                        allVarnames.push(encodedVarname);
+                    }
+                });
+            });
+        });
+        return allVarnames;
+    };
+    // gets all field names of classes, objects, dicts, C structs, and anything
+    // else that has attribute/field names, as indicated by this.curTrace
+    DataVisualizer.prototype.getAllProgramObjectFieldNames = function () {
+        var me = this;
+        var allFieldnames = [];
+        // copied from recurseIntoCStructArray ...
+        // see inside comments for an optimization opportunity:
+        function traverseCStructArray(val) {
+            if (val[0] == 'C_STRUCT') {
+                // grab all field names and add to allFieldnames
+                var structName_1 = val[2] ? val[2] : DataVisualizer.UNNAMED_PREFIX;
+                $.each(val, function (ind, kvPair) {
+                    if (ind < 3)
+                        return; // these have 3 header fields
+                    var fieldName = kvPair[0];
+                    var encodedFieldname = structName_1 + ':' + fieldName;
+                    if (allFieldnames.indexOf(encodedFieldname) < 0) { // don't insert duplicates
+                        allFieldnames.push(encodedFieldname);
+                    }
+                });
+            }
+            // recurse inside if necessary ...
+            //
+            // TODO: if you really want to make this more efficient
+            // (especially for huge arrays), you can simply traverse into the
+            // *first element* of C_ARRAY or C_MULTIDIMENSIONAL_ARRAY since
+            // they're supposedly homogeneous, so the type of the first element
+            // should be identical to the type of all other elements :)
+            // (just beware of the case of empty (zero-sized) arrays, though)
+            if (val[0] === 'C_ARRAY') {
+                $.each(val, function (ind, elt) {
+                    if (ind < 2)
+                        return; // these have 2 header fields
+                    traverseCStructArray(elt);
+                });
+            }
+            else if (val[0] === 'C_MULTIDIMENSIONAL_ARRAY' || val[0] === 'C_STRUCT') {
+                $.each(val, function (ind, kvPair) {
+                    if (ind < 3)
+                        return; // these have 3 header fields
+                    traverseCStructArray(kvPair[1]);
+                });
+            }
+        }
+        $.each(this.curTrace, function (i, curEntry) {
+            //console.log(i, curEntry);
+            // iterate through the heap looking for relevant objects with fields
+            // expected format from ../pg_encoder.py
+            // #   * instance - ['INSTANCE', class name, [attr1, value1], [attr2, value2], ..., [attrN, valueN]]
+            // #   * instance with non-trivial __str__ defined - ['INSTANCE_PPRINT', class name, <__str__ value>, [attr1, value1], [attr2, value2], ..., [attrN, valueN]]
+            // #   * class    - ['CLASS', class name, [list of superclass names], [attr1, value1], [attr2, value2], ..., [attrN, valueN]]
+            //
+            // also for javascript, JS_FUNCTION objects may have funcProperties
+            //
+            // [NB: we don't count DICT here since those don't technically contain
+            // 'fields'; they contain dict keys, which don't necessarily need to be
+            // strings, so it's confusing to try to ignore a non-string dict key]
+            $.each(curEntry.heap, function (k, obj) {
+                var typ = obj[0];
+                if (typ == 'INSTANCE' || typ == 'INSTANCE_PPRINT' || typ == 'CLASS') {
+                    var _a = DataVisualizer.getClassInstanceMetadata(obj), className = _a[0], headerLength = _a[1];
+                    for (var i_1 = headerLength; i_1 < obj.length; i_1++) {
+                        var fieldName = obj[i_1][0];
+                        // className can possibly be null ...
+                        var encodedFieldname = className ? className + ':' + fieldName : fieldName;
+                        if (allFieldnames.indexOf(encodedFieldname) < 0) { // don't insert duplicates
+                            allFieldnames.push(encodedFieldname);
+                        }
+                    }
+                }
+                else if (typ == 'JS_FUNCTION') {
+                    var funcProperties = obj[3];
+                    if (funcProperties) {
+                        var funcName = obj[1];
+                        // special-case handling: prefix with function name if appropriate
+                        for (var i_2 = 0; i_2 < funcProperties.length; i_2++) {
+                            var fieldName = funcProperties[i_2][0];
+                            // funcName can possibly be empty ...
+                            var encodedFieldname = funcName ? funcName + ':' + fieldName : fieldName;
+                            if (allFieldnames.indexOf(encodedFieldname) < 0) { // don't insert duplicates
+                                allFieldnames.push(encodedFieldname);
+                            }
+                        }
+                    }
+                }
+                else if (typ == 'C_ARRAY' || typ == 'C_MULTIDIMENSIONAL_ARRAY' || typ == 'C_STRUCT') {
+                    traverseCStructArray(obj);
+                }
+            });
+            // C and C++ objects can exist directly within the global frame or
+            // stack frames (not just on the heap), so we need to traverse
+            // through those as well
+            if (me.isCppMode()) {
+                $.each(curEntry.ordered_globals, function (i, varname) {
+                    var val = curEntry.globals[varname];
+                    traverseCStructArray(val);
+                });
+                // iterate thru all stack frames
+                $.each(curEntry.stack_to_render, function (i, frame) {
+                    $.each(frame.ordered_varnames, function (xxx, varname) {
+                        var val = frame.encoded_locals[varname];
+                        traverseCStructArray(val);
+                    });
+                });
+            }
+        });
+        return allFieldnames;
+    };
     // this method initializes curTraceLayouts
     //
     // Pre-compute the layout of top-level heap objects for ALL execution
@@ -1670,7 +1821,11 @@ var DataVisualizer = /** @class */ (function () {
     // heap objects don't "jiggle around" (i.e., preserving positional
     // invariance). Also, if we set up the layout objects properly, then we
     // can take full advantage of d3 to perform rendering and transitions.
+    //
+    // (also call this function whenever the user chooses to selectively
+    //  hide/show variables/objects, since we want to get the latest layout)
     DataVisualizer.prototype.precomputeCurTraceLayouts = function () {
+        //console.log('precomputeCurTraceLayouts');
         // curTraceLayouts is a list of top-level heap layout "objects" with the
         // same length as curTrace after it's been fully initialized. Each
         // element of curTraceLayouts is computed from the contents of its
@@ -1781,11 +1936,15 @@ var DataVisualizer = /** @class */ (function () {
                     });
                 }
                 else if (heapObj[0] == 'INSTANCE' || heapObj[0] == 'INSTANCE_PPRINT' || heapObj[0] == 'CLASS') {
+                    var _a = DataVisualizer.getClassInstanceMetadata(heapObj), className_1 = _a[0], headerLength_1 = _a[1];
                     jQuery.each(heapObj, function (ind, child) {
-                        var headerLength = (heapObj[0] == 'INSTANCE') ? 2 : 3;
-                        if (ind < headerLength)
+                        if (ind < headerLength_1)
                             return;
                         var instKey = child[0];
+                        if (myViz.inHideFieldsSet(className_1, instKey)) {
+                            //console.log('precompute HIDING', className, instKey);
+                            return; // get out!
+                        }
                         if (!myViz.isPrimitiveType(instKey)) {
                             var keyChildID = getRefID(instKey);
                             if (!myViz.owner.shouldNestObject(curEntry.heap[keyChildID])) {
@@ -1822,7 +1981,18 @@ var DataVisualizer = /** @class */ (function () {
                     }
                     if (funcProperties) {
                         assert(funcProperties.length > 0);
+                        var funcName_1 = heapObj[1];
                         $.each(funcProperties, function (ind, kvPair) {
+                            // only check this for JS_FUNCTION! we're overloading
+                            // funcProperties to use for both FUNCTION and
+                            // JS_FUNCTION, which might be confusing ...
+                            if (heapObj[0] == 'JS_FUNCTION') {
+                                var instKey = kvPair[0];
+                                if (myViz.inHideFieldsSet(funcName_1, instKey)) {
+                                    //console.log('precompute HIDING', funcName, instKey);
+                                    return; // get out!
+                                }
+                            }
                             // copy/paste from INSTANCE/CLASS code above
                             var instVal = kvPair[1];
                             if (!myViz.isPrimitiveType(instVal)) {
@@ -1948,12 +2118,24 @@ var DataVisualizer = /** @class */ (function () {
                     $.each(val, function (ind, kvPair) {
                         if (ind < 3)
                             return; // these have 3 header fields
+                        if (val[0] === 'C_STRUCT') {
+                            var structName = val[2] ? val[2] : DataVisualizer.UNNAMED_PREFIX;
+                            var fieldName = kvPair[0];
+                            if (myViz.inHideFieldsSet(structName, fieldName)) {
+                                //console.log('precompute HIDING', structName, fieldName);
+                                return; // get out!
+                            }
+                        }
                         updateCurLayoutAndRecurse(kvPair[1]);
                     });
                 }
             }
             // iterate through all globals and ordered stack frames and call updateCurLayout
             $.each(curEntry.ordered_globals, function (i, varname) {
+                if (myViz.inHideVarsSet(DataVisualizer.GLOBAL_PREFIX, varname)) {
+                    //console.log('precompute HIDING', DataVisualizer.GLOBAL_PREFIX, varname);
+                    return; // get out!
+                }
                 var val = curEntry.globals[varname];
                 if (val !== undefined) { // might not be defined at this line, which is OKAY!
                     // TODO: try to unify this behavior between C/C++ and other languages:
@@ -1969,7 +2151,13 @@ var DataVisualizer = /** @class */ (function () {
                 }
             });
             $.each(curEntry.stack_to_render, function (i, frame) {
+                // some functions are unnamed, so use a placeholder:
+                var func_prefix = frame.func_name ? frame.func_name : DataVisualizer.UNNAMED_PREFIX;
                 $.each(frame.ordered_varnames, function (xxx, varname) {
+                    if (myViz.inHideVarsSet(func_prefix, varname)) {
+                        //console.log('precompute HIDING', func_prefix, varname);
+                        return; // get out!
+                    }
                     var val = frame.encoded_locals[varname];
                     // TODO: try to unify this behavior between C/C++ and other languages:
                     if (myViz.isCppMode()) {
@@ -2100,6 +2288,7 @@ var DataVisualizer = /** @class */ (function () {
     // of data structure aliasing. That is, aliased objects were rendered
     // multiple times, and a unique ID label was used to identify aliases.
     DataVisualizer.prototype.renderDataStructures = function (curInstr) {
+        //console.log('renderDataStructures', curInstr);
         var myViz = this; // to prevent confusion of 'this' inside of nested functions
         var curEntry = this.curTrace[curInstr];
         var curToplevelLayout = this.curTraceLayouts[curInstr];
@@ -2127,6 +2316,11 @@ var DataVisualizer = /** @class */ (function () {
         myViz.jsPlumbInstance.select({ scope: 'frameParentPointer' }).each(function (c) {
             existingParentPointerConnectionEndpointIDs.set(c.sourceId, c.targetId);
         });
+        // what variables/fields were hidden in this call to renderDataStructures?
+        // (make these fields and not locals so that we can access them in
+        // other methods too, ergh)
+        myViz.varsHidden = [];
+        myViz.fieldsHidden = [];
         // Heap object rendering phase:
         // count everything in curToplevelLayout as already rendered since we will render them
         // in d3 .each() statements
@@ -2253,6 +2447,11 @@ var DataVisualizer = /** @class */ (function () {
         // so filter those out.)
         var realGlobalsLst = [];
         $.each(curEntry.ordered_globals, function (i, varname) {
+            if (myViz.inHideVarsSet(DataVisualizer.GLOBAL_PREFIX, varname)) {
+                console.log('render HIDING', DataVisualizer.GLOBAL_PREFIX, varname);
+                myViz.varsHidden.push(DataVisualizer.GLOBAL_PREFIX + ':' + varname);
+                return; // get out!
+            }
             var val = curEntry.globals[varname];
             // (use '!==' to do an EXACT match against undefined)
             if (val !== undefined) { // might not be defined at this line, which is OKAY!
@@ -2445,11 +2644,24 @@ var DataVisualizer = /** @class */ (function () {
             .order() // VERY IMPORTANT to put in the order corresponding to data elements
             .select('table').selectAll('tr')
             .data(function (frame) {
-            // each list element contains a reference to the entire frame
-            // object as well as the variable name
-            // TODO: look into whether we can use d3 parent nodes to avoid
-            // this hack ... http://bost.ocks.org/mike/nest/
-            return frame.ordered_varnames.map(function (varname) { return { varname: varname, frame: frame }; });
+            if (myViz.hideVarsSet) {
+                // filter out everything in hideVarsSet
+                var func_prefix_1 = frame.func_name ? frame.func_name : DataVisualizer.UNNAMED_PREFIX;
+                // a bit inefficient since we call filter twice, but whateves :)
+                var hiddenVarnamesLst = frame.ordered_varnames.filter(function (varname) { return myViz.inHideVarsSet(func_prefix_1, varname); });
+                console.log('render HIDING', func_prefix_1, hiddenVarnamesLst);
+                hiddenVarnamesLst.forEach(function (e) { myViz.varsHidden.push(func_prefix_1 + ':' + e); });
+                return frame.ordered_varnames
+                    .filter(function (varname) { return !myViz.inHideVarsSet(func_prefix_1, varname); })
+                    .map(function (varname) { return { varname: varname, frame: frame }; });
+            }
+            else {
+                // each list element contains a reference to the entire frame
+                // object as well as the variable name
+                // TODO: look into whether we can use d3 parent nodes to avoid
+                // this hack ... http://bost.ocks.org/mike/nest/
+                return frame.ordered_varnames.map(function (varname) { return { varname: varname, frame: frame }; });
+            }
         }, function (d) {
             // TODO: why would d ever be null?!? weird
             if (d) {
@@ -2842,6 +3054,22 @@ var DataVisualizer = /** @class */ (function () {
                 });
             }
         });
+        // show which variables/fields were actually hidden during this call
+        // to renderDataStructures:
+        if (myViz.owner.navControls.customizeVizOptionsShown) {
+            needToRedrawConnectors = true; // always redraw! TODO: will this get inefficient?!?
+            var shs = this.domRoot.find('#selectiveHideStatus');
+            shs.empty(); // ALWAYS start from scratch each time!
+            if (myViz.varsHidden.length > 0 || myViz.fieldsHidden.length > 0) {
+                // printing hidden vars/fields may move elements in the heap visualization
+                if (myViz.varsHidden.length > 0) {
+                    shs.append("Hidden variables: " + varlistToHtml(myViz.varsHidden));
+                }
+                if (myViz.fieldsHidden.length > 0) {
+                    shs.append("<br/>Hidden object fields: " + varlistToHtml(myViz.fieldsHidden));
+                }
+            }
+        }
         if (needToRedrawConnectors) {
             myViz.redrawConnectors();
         }
@@ -3133,8 +3361,8 @@ var DataVisualizer = /** @class */ (function () {
         else if (obj[0] == 'INSTANCE' || obj[0] == 'INSTANCE_PPRINT' || obj[0] == 'CLASS') {
             var isInstance = (obj[0] == 'INSTANCE');
             var isPprintInstance = (obj[0] == 'INSTANCE_PPRINT');
-            var headerLength = isInstance ? 2 : 3;
-            assert(obj.length >= headerLength);
+            var _a = DataVisualizer.getClassInstanceMetadata(obj), className_2 = _a[0], headerLength_2 = _a[1];
+            assert(obj.length >= headerLength_2);
             if (isInstance) {
                 d3DomElement.append('<div class="typeLabel">' + typeLabelPrefix + obj[1] + ' ' + myViz.getRealLabel('instance') + '</div>');
             }
@@ -3147,21 +3375,20 @@ var DataVisualizer = /** @class */ (function () {
                 if (obj[2].length > 0) {
                     superclassStr += ('[extends ' + obj[2].join(', ') + '] ');
                 }
-                d3DomElement.append('<div class="typeLabel">' + typeLabelPrefix + obj[1] + ' class ' + superclassStr +
-                    '<br/>' + '<a href="javascript:void(0)" id="attrToggleLink">hide attributes</a>' + '</div>');
+                d3DomElement.append('<div class="typeLabel">' + typeLabelPrefix + obj[1] + ' class ' + superclassStr + '</div>');
             }
-            // right now, let's NOT display class members, since that clutters
-            // up the display too much. in the future, consider displaying
-            // class members in a pop-up pane on mouseover or mouseclick
-            // actually nix what i just said above ...
-            //if (!isInstance) return;
-            if (obj.length > headerLength) {
+            if (obj.length > headerLength_2) {
                 var lab = isInstance ? 'inst' : 'class';
                 d3DomElement.append('<table class="' + lab + 'Tbl"></table>');
                 var tbl = d3DomElement.children('table:last'); // tricky, there's more than 1 table if isPprintInstance is true
                 $.each(obj, function (ind, kvPair) {
-                    if (ind < headerLength)
+                    if (ind < headerLength_2)
                         return; // skip header tags
+                    if (myViz.inHideFieldsSet(className_2, kvPair[0])) {
+                        console.log('render HIDING', className_2, kvPair[0]);
+                        myViz.fieldsHidden.push((className_2 ? className_2 + ':' : '') + kvPair[0]);
+                        return; // get out!
+                    }
                     tbl.append('<tr class="' + lab + 'Entry"><td class="' + lab + 'Key"></td><td class="' + lab + 'Val"></td></tr>');
                     var newRow = tbl.find('tr:last');
                     var keyTd = newRow.find('td:first');
@@ -3180,40 +3407,6 @@ var DataVisualizer = /** @class */ (function () {
                     // values can be arbitrary objects, so recurse:
                     myViz.renderNestedObject(kvPair[1], stepNum, valTd);
                 });
-            }
-            // class attributes can be displayed or hidden, so as not to
-            // CLUTTER UP the display with a ton of attributes, especially
-            // from imported modules and custom types created from, say,
-            // collections.namedtuple
-            //
-            // TODO: make this a more general mechanism by which anything can
-            // be toggled hidden! one idea is to use a hidden data- field in
-            // each .heapObject to store its attribute toggle status, so that
-            // we can restore it when we re-render this object at other
-            // execution steps
-            if (!isInstance) {
-                var className = obj[1];
-                d3DomElement.find('.typeLabel #attrToggleLink').click(function () {
-                    var elt = d3DomElement.find('.classTbl');
-                    elt.toggle();
-                    $(this).html((elt.is(':visible') ? 'hide' : 'show') + ' attributes');
-                    if (elt.is(':visible')) {
-                        myViz.classAttrsHidden[className] = false;
-                        $(this).html('hide attributes');
-                    }
-                    else {
-                        myViz.classAttrsHidden[className] = true;
-                        $(this).html('show attributes');
-                    }
-                    myViz.redrawConnectors(); // redraw all arrows!
-                    return false; // don't reload the page
-                });
-                // "remember" whether this was hidden earlier during this
-                // visualization session
-                if (myViz.classAttrsHidden[className]) {
-                    d3DomElement.find('.classTbl').hide();
-                    d3DomElement.find('.typeLabel #attrToggleLink').html('show attributes');
-                }
             }
         }
         else if (obj[0] == 'FUNCTION') {
@@ -3264,7 +3457,14 @@ var DataVisualizer = /** @class */ (function () {
                 tbl.append('<tr><td class="funcCod" colspan="2"><pre class="funcCode">' + funcCode + '</pre>' + '</td></tr>');
                 if (funcProperties) {
                     assert(funcProperties.length > 0);
+                    var rawFuncName_1 = obj[1];
                     $.each(funcProperties, function (ind, kvPair) {
+                        var instKey = kvPair[0];
+                        if (myViz.inHideFieldsSet(rawFuncName_1, kvPair[0])) {
+                            console.log('render HIDING', rawFuncName_1, kvPair[0]);
+                            myViz.fieldsHidden.push((rawFuncName_1 ? rawFuncName_1 + ':' : '') + kvPair[0]);
+                            return; // get out!
+                        }
                         tbl.append('<tr class="classEntry"><td class="classKey"></td><td class="classVal"></td></tr>');
                         var newRow = tbl.find('tr:last');
                         var keyTd = newRow.find('td:first');
@@ -3325,9 +3525,16 @@ var DataVisualizer = /** @class */ (function () {
             if (obj.length > 3) {
                 d3DomElement.append('<table class="instTbl"></table>');
                 var tbl = d3DomElement.children('table');
+                var structName_2 = obj[2] ? obj[2] : DataVisualizer.UNNAMED_PREFIX;
                 $.each(obj, function (ind, kvPair) {
                     if (ind < 3)
                         return; // skip header tags
+                    var fieldName = kvPair[0];
+                    if (myViz.inHideFieldsSet(structName_2, fieldName)) {
+                        console.log('render HIDING', structName_2, fieldName);
+                        myViz.fieldsHidden.push(structName_2 + ':' + fieldName);
+                        return; // get out!
+                    }
                     tbl.append('<tr class="instEntry"><td class="instKey"></td><td class="instVal"></td></tr>');
                     var newRow = tbl.find('tr:last');
                     var keyTd = newRow.find('td:first');
@@ -3425,6 +3632,70 @@ var DataVisualizer = /** @class */ (function () {
     DataVisualizer.prototype.redrawConnectors = function () {
         this.jsPlumbInstance.repaintEverything();
     };
+    // selectively hiding variables or fields
+    //
+    // note that C++ uses '::' in member function names, so for
+    // the names in hideVarsLst and hideFieldsLst, we can't
+    // reliably split on ':' to reconstruct its original function/class
+    // name and its variable name. e.g., "Computer::setspeed(int):p"
+    //
+    // the more robust strategy is to keep this string intact and try to
+    // reconstruct it when matching up with variables in the execution trace
+    // ... but consider the case where there are NO COLONS in the string,
+    // which indicates a variable/field name that should be matched
+    // regardless of what function/object it belongs to
+    DataVisualizer.prototype.selectivelyHideVarsAndFields = function (hideVarsLst, hideFieldsLst) {
+        var _this = this;
+        if (hideVarsLst.length > 0) {
+            this.hideVarsSet = d3.map();
+            hideVarsLst.forEach(function (e) { return _this.hideVarsSet.set(e, true); });
+        }
+        else {
+            this.hideVarsSet = null; // reset
+        }
+        if (hideFieldsLst.length > 0) {
+            this.hideFieldsSet = d3.map();
+            hideFieldsLst.forEach(function (e) { return _this.hideFieldsSet.set(e, true); });
+        }
+        else {
+            this.hideFieldsSet = null; // reset
+        }
+        // now that this.hideVarsSet and this.hideFieldsSet have been updated ...
+        this.precomputeCurTraceLayouts(); // recompute layouts to account for hidden vars/objects
+        this.renderDataStructures(this.owner.curInstr); // render current step again
+        //this.owner.updateOutput(); // alternatively, try this
+    };
+    // precondition: obj[0] is in {'INSTANCE', 'INSTANCE_PPRINT', 'CLASS'}
+    // returns: [class name, header length]
+    DataVisualizer.getClassInstanceMetadata = function (obj) {
+        var typ = obj[0];
+        assert(typ == 'INSTANCE' || typ == 'INSTANCE_PPRINT' || typ == 'CLASS');
+        var className = obj[1]; // might possibly be ''
+        var headerLength = (typ == 'INSTANCE') ? 2 : 3;
+        return [className, headerLength];
+    };
+    // returns true if funcname:varname is in this.hideVarsSet
+    // OR if varname alone (without a funcname qualifier) is in this.hideVarsSet
+    DataVisualizer.prototype.inHideVarsSet = function (funcname, varname) {
+        return DataVisualizer._inHideSetHelper(this.hideVarsSet, funcname, varname);
+    };
+    // same as inHideVarsSet except for classname/fieldname in this.hideFieldsSet
+    DataVisualizer.prototype.inHideFieldsSet = function (classname, fieldname) {
+        return DataVisualizer._inHideSetHelper(this.hideFieldsSet, classname, fieldname);
+    };
+    DataVisualizer._inHideSetHelper = function (myMap, first, second) {
+        if (!myMap) {
+            return false;
+        }
+        else if (!first) { // only match on second, in that case
+            return myMap.has(second);
+        }
+        else { // match on either first:second or second
+            return myMap.has(first + ':' + second) || myMap.has(second);
+        }
+    };
+    DataVisualizer.GLOBAL_PREFIX = 'global';
+    DataVisualizer.UNNAMED_PREFIX = '<unnamed>';
     return DataVisualizer;
 }()); // END class DataVisualizer
 var ProgramOutputBox = /** @class */ (function () {
@@ -3890,9 +4161,11 @@ var NavigationController = /** @class */ (function () {
             // customizeVizOptionsShown is on, so objects get made .draggable()
             _this.customizeVizOptionsShown = true;
             uiControlsPane.append(' \
-        <div style="margin-top: 5px;"/>\
-          (move objects around by <b>dragging</b>, but their positions won\'t be shared in URL or live chat)\
-          <div style="margin-top: 8px; margin-bottom: 5px;">\
+        <div style="margin-top: 8px;"/>\
+          <font color="#e93f34">Warning:</font> Reloading this page loses all changes;\
+          customizations NOT shared in URL or chat sessions\
+          <p/><b>Drag</b> any object around to move it. Customize its pointers:\
+          <div style="margin-top: 12px; margin-bottom: 5px;">\
           Line style:\
           <select id="jsplumbConnectorType">\
             <option value="StateMachine" selected>Default</option>\
@@ -3908,9 +4181,21 @@ var NavigationController = /** @class */ (function () {
           <div class="sliderWrapper">Gap: <input type="range" min="0" max="50" value="0" class="jsplumbOptionSlider" id="gap"><span class="sliderVal">0</span></div>\
           <div class="sliderWrapper">Midpoint: <input type="range" min="0" max="10" value="0.5" step="0.5" class="jsplumbOptionSlider" id="midpoint"><span class="sliderVal">0.5</span></div>\
           <div class="sliderWrapper">CornerRadius: <input type="range" min="0" max="10" value="0" class="jsplumbOptionSlider" id="cornerRadius"><span class="sliderVal">0</span></div>\
-          <div style="margin-top: 10px;" class="sliderWrapper">Arrow length: <input type="range" min="1" max="30" value="10" class="jsplumbOptionSlider" id="arrowLength"><span class="sliderVal">10</span></div>\
+          <div class="sliderWrapper">Arrow length: <input type="range" min="1" max="30" value="10" class="jsplumbOptionSlider" id="arrowLength"><span class="sliderVal">10</span></div>\
           <div class="sliderWrapper">Arrow width: <input type="range" min="1" max="30" value="7" class="jsplumbOptionSlider" id="arrowWidth"><span class="sliderVal">7</span></div>\
           <div class="sliderWrapper">Arrow fold: <input type="range" min="0" max="1" value="0.55" step="0.05" class="jsplumbOptionSlider" id="arrowFoldback"><span class="sliderVal">0.55</span></div>\
+          <div id="selectiveHideDiv" style="margin-top: 15px; padding: 6px 6px 6px 6px; border: 1px solid #ccc;">\
+            <b>Hide variables/fields</b> (elements may end up out of order, so reload page to reset)<br/>\
+            <button id="updateHideVarsBtn" style="margin-top: 8px;">Update visualization</button>\
+            <p/>All choices below; use part after colon to match all variables/fields with that name.<br/>\
+            <font color="#e93f34">(Double-check your spelling!)</font>\
+            <p/>Hide these variables:<br/>\
+            <textarea id="hideVars" rows="3" cols="70"/>\
+            <div id="hideVarsChoices" style="width: 500px;"></div>\
+            <p style="margin-top: 15px;"/>Hide these object fields:<br/>\
+            <textarea id="hideFields" rows="3" cols="70"/>\
+            <div id="hideFieldsChoices" style="width: 500px;"></div>\
+          </div>\
         </div>\
       ');
             // note that many of these options aren't present in the OLD OLD
@@ -4000,6 +4285,18 @@ var NavigationController = /** @class */ (function () {
             }).val('StateMachine').change(); // <-- trigger a change event on this
             // initial setting to get the change
             // handler above to run
+            // set up infrastructure for showing/hiding variables / object fields
+            var allVarnames = _this.owner.dataViz.getAllProgramVarnames();
+            var allFieldnames = _this.owner.dataViz.getAllProgramObjectFieldNames();
+            var varnameChoices = varlistToHtml(allVarnames);
+            var fieldnameChoices = varlistToHtml(allFieldnames);
+            uiControlsPane.find('#hideVarsChoices').html('<b><em>Choices:</em></b> ' + varnameChoices);
+            uiControlsPane.find('#hideFieldsChoices').html('<b><em>Choices:</em></b> ' + fieldnameChoices);
+            uiControlsPane.find('#updateHideVarsBtn').click(function () {
+                var hideVarsLst = processHideString(uiControlsPane.find('#hideVars').val());
+                var hideFieldsLst = processHideString(uiControlsPane.find('#hideFields').val());
+                _this.owner.dataViz.selectivelyHideVarsAndFields(hideVarsLst, hideFieldsLst);
+            });
             return false; // don't follow the link and reload the page!
         });
     }
@@ -22200,7 +22497,7 @@ exports = module.exports = __webpack_require__(2)(false);
 
 
 // module
-exports.push([module.i, "/*\n\nOnline Python Tutor\nhttps://github.com/pgbovine/OnlinePythonTutor/\n\nCopyright (C) Philip J. Guo (philip@pgbovine.net)\n\nPermission is hereby granted, free of charge, to any person obtaining a\ncopy of this software and associated documentation files (the\n\"Software\"), to deal in the Software without restriction, including\nwithout limitation the rights to use, copy, modify, merge, publish,\ndistribute, sublicense, and/or sell copies of the Software, and to\npermit persons to whom the Software is furnished to do so, subject to\nthe following conditions:\n\nThe above copyright notice and this permission notice shall be included\nin all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS\nOR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF\nMERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\nIN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\nCLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\nTORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE\nSOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n*/\n\n/* Most recent color scheme redesign on 2012-08-19 */\n\n/* To prevent CSS namespace clashes, prefix all rules with:\n     div.ExecutionVisualizer\n*/\n\n\n/* reset some styles to nullify effects of existing stylesheets\n   e.g., http://meyerweb.com/eric/tools/css/reset/\n*/\ndiv.ExecutionVisualizer {\n  /* none for now */\n}\n\ndiv.ExecutionVisualizer table.visualizer {\n  font-family: verdana, arial, helvetica, sans-serif;\n  font-size: 10pt;\n  margin-bottom: 10px;\n}\n\ndiv.ExecutionVisualizer table.visualizer td.vizLayoutTd {\n  vertical-align: top;\n}\n\ndiv.ExecutionVisualizer td#stack_td,\ndiv.ExecutionVisualizer td#heap_td {\n  vertical-align:top;\n  font-size: 10pt; /* don't make fonts in the heap so big! */\n}\n\ndiv.ExecutionVisualizer #dataViz {\n  /*margin-left: 25px;*/\n}\n\n/*\ndiv.ExecutionVisualizer div#codeDisplayDiv {\n  width: 550px;\n}\n*/\n\ndiv.ExecutionVisualizer div#pyCodeOutputDiv {\n  /*max-width: 550px;*/\n  max-height: 460px;\n  /*max-height: 620px;*/\n  overflow: auto;\n  /*margin-bottom: 4px;*/\n\n  margin-left: auto;\n  margin-right: auto;\n}\n\ndiv.ExecutionVisualizer table#pyCodeOutput {\n  font-family: Andale mono, monospace;\n  /*font-size:12pt;*/\n  font-size:11pt;\n  line-height:1.1em;\n\n  border-collapse: separate; /* some crazy CSS voodoo that needs to be\n                                there so that SVG arrows to the left\n                                of the code line up vertically in Chrome */\n  border-spacing: 0px;\n  border-top: 1px solid #bbb;\n  padding-top: 3px;\n  border-bottom: 1px solid #bbb;\n  /*margin-top: 6px;*/\n  margin: 6px auto; /* Center code in its pane */\n}\n\n/* don't wrap lines within code output ... FORCE scrollbars to appear */\ndiv.ExecutionVisualizer table#pyCodeOutput td {\n  white-space: nowrap;\n  vertical-align: middle; /* explicitly force, to override external CSS conflicts */\n}\n\ndiv.ExecutionVisualizer #leftCodeGutterSVG {\n  width: 18px;\n  min-width: 18px; /* make sure it doesn't squash too thin */\n  height: 0px; /* programmatically set this later ... IE needs this to\n                  be 0 or it defaults to something arbitrary and gross */\n}\n\ndiv.ExecutionVisualizer #prevLegendArrowSVG,\ndiv.ExecutionVisualizer #curLegendArrowSVG {\n  width: 18px;\n  height: 10px;\n}\n\ndiv.ExecutionVisualizer .arrow {\n  font-size: 16pt;\n}\n\ndiv.ExecutionVisualizer table#pyCodeOutput .lineNo {\n  color: #aaa;\n  padding: 0.2em;\n  padding-left: 0.3em;\n  padding-right: 0.5em;\n  text-align: right;\n}\n\ndiv.ExecutionVisualizer table#pyCodeOutput .cod {\n  /*font-weight: bold;*/\n  margin-left: 3px;\n  padding-left: 7px;\n  text-align: left; /* necessary or else doesn't work properly in IE */\n}\n\ndiv.ExecutionVisualizer div#progOutputs {\n  margin-left: 13px; /* line up with heap visualizations */\n  margin-bottom: 3px;\n}\n\ndiv.ExecutionVisualizer div#legendDiv {\n  padding: 0px;\n  text-align: left;\n  color: #666;\n  font-size: 9pt;\n}\n\ndiv.ExecutionVisualizer div#editCodeLinkDiv {\n  text-align: center;\n  /*\n  margin-top: 12px;\n  margin-bottom: 4px;\n  */\n  margin: 8px auto;\n  font-size: 11pt;\n}\n\ndiv.ExecutionVisualizer div#annotateLinkDiv {\n  /*text-align: left;*/\n  margin-top: 0px;\n  margin-bottom: 12px;\n  /*\n  margin-left: auto;\n  margin-right: auto;\n  */\n}\n\ndiv.ExecutionVisualizer div#stepAnnotationDiv {\n  margin-bottom: 12px;\n}\n\ndiv.ExecutionVisualizer textarea#stepAnnotationEditor,\ndiv.ExecutionVisualizer textarea#vizTitleEditor,\ndiv.ExecutionVisualizer textarea#vizDescriptionEditor {\n  border: 1px solid #999999;\n  padding: 4px;\n\n  overflow: auto; /* to look pretty on IE */\n  /* make sure textarea doesn't grow and stretch */\n  resize: none;\n}\n\n\ndiv.ExecutionVisualizer #errorOutput {\n  color: #e93f34; /* should match brightRed JavaScript variable */\n  font-size: 11pt;\n  padding-top: 2px;\n  line-height: 1.5em;\n  margin-bottom: 4px;\n}\n\n/* VCR control buttons for stepping through execution */\n\ndiv.ExecutionVisualizer #vcrControls {\n  margin-top: 15px;\n  margin-bottom: 6px;\n  /*width: 100%;*/\n  text-align: center;\n}\n\ndiv.ExecutionVisualizer #vcrControls button {\n  margin-left: 2px;\n  margin-right: 2px;\n}\n\ndiv.ExecutionVisualizer #curInstr {\n  text-align: center;\n}\n\ndiv.ExecutionVisualizer #pyStdout {\n  border: 1px solid #999999;\n  font-size: 10pt;\n  padding: 3px;\n  font-family: Andale mono, monospace;\n\n  overflow: auto; /* to look pretty on IE */\n  /* make sure textarea doesn't grow and stretch */\n  resize: none;\n}\n\n\ndiv.ExecutionVisualizer .vizFrame {\n  margin-bottom: 20px;\n  padding-left: 8px;\n  border-left: 2px solid #cccccc;\n}\n\n\n/* Rendering of primitive types */\n\ndiv.ExecutionVisualizer .importedObj {\n  font-size: 8pt;\n}\n\ndiv.ExecutionVisualizer .nullObj {\n/*  font-size: 8pt; */\n}\n\ndiv.ExecutionVisualizer .stringObj,\ndiv.ExecutionVisualizer .customObj,\ndiv.ExecutionVisualizer .funcObj {\n  font-family: Andale mono, monospace;\n  white-space: nowrap;\n}\n\ndiv.ExecutionVisualizer .funcCode {\n  font-size: 8pt;\n}\n\ndiv.ExecutionVisualizer .retval {\n  font-size: 9pt;\n}\n\ndiv.ExecutionVisualizer .stackFrame .retval {\n  color: #e93f34; /* highlight non-zombie stack frame return values -\n                     should match brightRed JavaScript variable */\n}\n\n/* Rendering of basic compound types */\n\ndiv.ExecutionVisualizer table.listTbl,\ndiv.ExecutionVisualizer table.tupleTbl,\ndiv.ExecutionVisualizer table.setTbl {\n  background-color: #ffffc6;\n}\n\n\ndiv.ExecutionVisualizer table.listTbl {\n  border: 0px solid black;\n  border-spacing: 0px;\n}\n\ndiv.ExecutionVisualizer table.listTbl td.listHeader,\ndiv.ExecutionVisualizer table.tupleTbl td.tupleHeader {\n  padding-left: 4px;\n  padding-top: 2px;\n  padding-bottom: 3px;\n  font-size: 8pt;\n  color: #777;\n  text-align: left;\n  border-left: 1px solid #555555;\n}\n\ndiv.ExecutionVisualizer table.tupleTbl {\n  border-spacing: 0px;\n  color: black;\n\n  border-bottom: 1px solid #555555; /* must match td.tupleHeader border */\n  border-top: 1px solid #555555; /* must match td.tupleHeader border */\n  border-right: 1px solid #555555; /* must match td.tupleHeader border */\n}\n\n\ndiv.ExecutionVisualizer table.listTbl td.listElt {\n  border-bottom: 1px solid #555555; /* must match td.listHeader border */\n  border-left: 1px solid #555555; /* must match td.listHeader border */\n}\n\n\n/* for C and C++ visualizations */\n\n/* make this slightly more compact than listTbl since arrays can be\n   rendered on the stack so we want to kinda conserve space */\ndiv.ExecutionVisualizer table.cArrayTbl {\n  background-color: #ffffc6;\n  padding-left: 0px;\n  padding-top: 0px;\n  padding-bottom: 0px;\n  font-size: 8pt;\n  color: #777;\n  text-align: left;\n  border: 0px solid black;\n  border-spacing: 0px;\n}\n\ndiv.ExecutionVisualizer table.cArrayTbl td.cArrayHeader {\n  padding-left: 5px;\n  padding-top: 0px;\n  padding-bottom: 2px;\n  font-size: 6pt;\n  color: #777;\n  text-align: left;\n  border-bottom: 0px solid black; /* override whatever we're nested in */\n}\n\ndiv.ExecutionVisualizer table.cArrayTbl td.cArrayElt {\n  border-bottom: 1px solid #888;\n  border-left: 1px solid #888;\n  border-top: 0px solid black;\n  color: black;\n\n  padding-top: 2px;\n  padding-bottom: 4px;\n  padding-left: 5px;\n  padding-right: 4px;\n  vertical-align: bottom;\n}\n\ndiv.ExecutionVisualizer table.cArrayTbl td.cMultidimArrayHeader {\n  padding-left: 5px;\n  padding-right: 5px;\n  padding-top: 1px;\n  padding-bottom: 3px;\n  font-size: 6pt;\n  color: #777;\n  text-align: left;\n  border-top: 1px solid #888;\n  border-left: 1px solid #888;\n  border-bottom: 0px solid black; /* override whatever we're nested in */\n}\n\ndiv.ExecutionVisualizer table.cArrayTbl td.cMultidimArrayElt {\n  border-left: 1px solid #888;\n  color: black;\n  padding-top: 1px;\n  padding-bottom: 4px;\n  padding-left: 5px;\n  padding-right: 5px;\n  vertical-align: bottom;\n}\n\n\ndiv.ExecutionVisualizer .cdataHeader {\n  font-size: 6pt;\n  color: #555;\n  padding-bottom: 2px;\n}\n\ndiv.ExecutionVisualizer .cdataElt {\n  font-size: 10pt;\n}\n\ndiv.ExecutionVisualizer .cdataUninit {\n  color: #888;\n}\n\n\ndiv.ExecutionVisualizer table.tupleTbl td.tupleElt {\n  border-left: 1px solid #555555; /* must match td.tupleHeader border */\n}\n\ndiv.ExecutionVisualizer table.customObjTbl {\n  background-color: white;\n  color: black;\n  border: 1px solid black;\n}\n\ndiv.ExecutionVisualizer table.customObjTbl td.customObjElt {\n  padding: 5px;\n  font-size: 9pt; /* make this smaller */\n}\n\ndiv.ExecutionVisualizer table.listTbl td.listElt,\ndiv.ExecutionVisualizer table.tupleTbl td.tupleElt {\n  padding-top: 0px;\n  padding-bottom: 8px;\n  padding-left: 10px;\n  padding-right: 10px;\n  vertical-align: bottom;\n}\n\ndiv.ExecutionVisualizer table.setTbl {\n  border: 1px solid #555555;\n  border-spacing: 0px;\n  text-align: center;\n}\n\ndiv.ExecutionVisualizer table.setTbl td.setElt {\n  padding: 8px;\n}\n\n\ndiv.ExecutionVisualizer table.dictTbl,\ndiv.ExecutionVisualizer table.instTbl,\ndiv.ExecutionVisualizer table.classTbl {\n  border-spacing: 1px;\n}\n\ndiv.ExecutionVisualizer table.dictTbl td.dictKey,\ndiv.ExecutionVisualizer table.instTbl td.instKey,\ndiv.ExecutionVisualizer table.classTbl td.classKey {\n  background-color: #faebbf;\n}\n\ndiv.ExecutionVisualizer table.dictTbl td.dictVal,\ndiv.ExecutionVisualizer table.instTbl td.instVal,\ndiv.ExecutionVisualizer table.classTbl td.classVal,\ndiv.ExecutionVisualizer td.funcCod {\n  background-color: #ffffc6;\n}\n\n\ndiv.ExecutionVisualizer table.dictTbl td.dictKey,\ndiv.ExecutionVisualizer table.instTbl td.instKey,\ndiv.ExecutionVisualizer table.classTbl td.classKey {\n  padding-top: 6px /*15px*/;\n  padding-bottom: 6px;\n  padding-left: 10px;\n  padding-right: 4px;\n\n  text-align: right;\n}\n\ndiv.ExecutionVisualizer table.dictTbl td.dictVal,\ndiv.ExecutionVisualizer table.instTbl td.instVal,\ndiv.ExecutionVisualizer table.classTbl td.classVal {\n  padding-top: 6px; /*15px*/;\n  padding-bottom: 6px;\n  padding-right: 10px;\n  padding-left: 4px;\n}\n\ndiv.ExecutionVisualizer td.funcCod {\n  padding-left: 4px;\n}\n\ndiv.ExecutionVisualizer table.classTbl td,\ndiv.ExecutionVisualizer table.instTbl td {\n  border-bottom: 1px #888 solid;\n}\n\ndiv.ExecutionVisualizer table.classTbl td.classVal,\ndiv.ExecutionVisualizer table.instTbl td.instVal {\n  border-left: 1px #888 solid;\n}\n\ndiv.ExecutionVisualizer table.classTbl,\ndiv.ExecutionVisualizer table.funcTbl {\n  border-collapse: collapse;\n  border: 1px #888 solid;\n}\n\n/* only add a border to dicts if they're embedded within another object */\ndiv.ExecutionVisualizer td.listElt table.dictTbl,\ndiv.ExecutionVisualizer td.tupleElt table.dictTbl,\ndiv.ExecutionVisualizer td.dictVal table.dictTbl,\ndiv.ExecutionVisualizer td.instVal table.dictTbl,\ndiv.ExecutionVisualizer td.classVal table.dictTbl {\n  border: 1px #888 solid;\n}\n\ndiv.ExecutionVisualizer .objectIdLabel {\n  font-size: 8pt;\n  color: #444;\n  margin-bottom: 2px;\n}\n\ndiv.ExecutionVisualizer .typeLabel {\n  font-size: 8pt;\n  color: #555;\n  margin-bottom: 2px;\n}\n\ndiv.ExecutionVisualizer div#stack,\ndiv.ExecutionVisualizer div#globals_area {\n  padding-left: 10px;\n  padding-right: 30px;\n\n  /* no longer necessary ... */\n  /*float: left;*/\n  /* border-right: 1px dashed #bbbbbb; */\n}\n\ndiv.ExecutionVisualizer div.stackFrame,\ndiv.ExecutionVisualizer div.zombieStackFrame {\n  background-color: #ffffff;\n  margin-bottom: 15px;\n  padding: 2px;\n  padding-left: 6px;\n  padding-right: 6px;\n  padding-bottom: 4px;\n  font-size: 10pt;\n}\n\ndiv.ExecutionVisualizer div.zombieStackFrame {\n  border-left: 1px dotted #aaa;\n  /*color: #c0c0c0;*/\n  color: #a0a0a0;\n}\n\ndiv.ExecutionVisualizer div.highlightedStackFrame {\n  background-color: #e2ebf6;\n  /*background-color: #d7e7fb;*/\n\n  /*background-color: #c0daf8;*/\n  /*background-color: #9eeaff #c5dfea;*/\n}\n\ndiv.ExecutionVisualizer div.stackFrame,\ndiv.ExecutionVisualizer div.highlightedStackFrame {\n  border-left: 1px solid #a6b3b6;\n}\n\n\ndiv.ExecutionVisualizer div.stackFrameHeader {\n  font-family: Andale mono, monospace;\n  font-size: 10pt;\n  margin-top: 4px;\n  margin-bottom: 3px;\n  white-space: nowrap;\n}\n\ndiv.ExecutionVisualizer td.stackFrameVar {\n  text-align: right;\n  padding-right: 8px;\n  padding-top: 3px;\n  padding-bottom: 3px;\n}\n\ndiv.ExecutionVisualizer td.stackFrameValue {\n  text-align: left;\n  border-bottom: 1px solid #aaaaaa;\n  border-left: 1px solid #aaaaaa;\n\n  vertical-align: middle;\n\n  padding-top: 3px;\n  padding-left: 3px;\n  padding-bottom: 3px;\n}\n\ndiv.ExecutionVisualizer .stackFrameVarTable tr {\n\n}\n\ndiv.ExecutionVisualizer .stackFrameVarTable {\n  text-align: right;\n  padding-top: 3px;\n\n  /* right-align the table */\n  margin-left: auto;\n  margin-right: 0px;\n\n  /* hack to counteract possible nasty CSS reset styles from parent divs */\n  border-collapse: separate;\n  border-spacing: 2px;\n}\n\ndiv.ExecutionVisualizer div#heap {\n  float: left;\n  padding-left: 30px;\n}\n\ndiv.ExecutionVisualizer td.toplevelHeapObject {\n  /* needed for d3 to do transitions */\n  padding-left: 8px;\n  padding-right: 8px;\n  padding-top: 4px;\n  padding-bottom: 4px;\n  /*\n  border: 2px dotted white;\n  border-color: white;\n  */\n}\n\ndiv.ExecutionVisualizer table.heapRow {\n  margin-bottom: 10px;\n}\n\ndiv.ExecutionVisualizer div.heapObject {\n  padding-left: 2px; /* leave a TINY amount of room for connector endpoints */\n}\n\ndiv.ExecutionVisualizer div.heapPrimitive {\n  padding-left: 4px; /* leave some more room for connector endpoints */\n}\n\ndiv.ExecutionVisualizer div#stackHeader {\n  margin-bottom: 15px;\n  text-align: right;\n}\n\ndiv.ExecutionVisualizer div#heapHeader {\n  /*margin-top: 2px;\n  margin-bottom: 13px;*/\n  margin-bottom: 15px;\n}\n\ndiv.ExecutionVisualizer div#langDisplayDiv {\n  text-align: center;\n  margin-top: 2pt;\n  margin-bottom: 3pt;\n}\n\ndiv.ExecutionVisualizer div#langDisplayDiv,\ndiv.ExecutionVisualizer div#stackHeader,\ndiv.ExecutionVisualizer div#heapHeader {\n  color: #333333;\n  font-size: 10pt;\n}\n\ndiv.ExecutionVisualizer #executionSlider {\n  /* if you set 'width', then it looks ugly when you dynamically resize */\n  margin-top: 15px;\n  margin-bottom: 5px;\n\n  /* DON'T center this, since we need breakpoints in executionSliderFooter to be well aligned */\n  width: 98%;\n}\n\ndiv.ExecutionVisualizer #executionSliderCaption {\n  font-size: 8pt;\n  color: #666666;\n  margin-top: 15px;\n}\n\ndiv.ExecutionVisualizer #executionSliderFooter {\n  margin-top: -7px; /* make it butt up against #executionSlider */\n}\n\ndiv.ExecutionVisualizer #codeFooterDocs,\ndiv.ExecutionVisualizer #printOutputDocs {\n  margin-bottom: 3px;\n  font-size: 8pt;\n  color: #666;\n}\n\ndiv.ExecutionVisualizer #codeFooterDocs {\n  margin-top: 5px;\n  margin-bottom: 12px;\n  width: 95%;\n}\n\n/* darken slider handle a bit */\ndiv.ExecutionVisualizer .ui-slider .ui-slider-handle {\n  border: 1px solid #999;\n}\n\n\n/* for annotation bubbles */\n\n/* For styling tricks, see: http://css-tricks.com/textarea-tricks/ */\ntextarea.bubbleInputText {\n  border: 1px solid #ccc;\n  outline: none;\n  overflow: auto; /* to look pretty on IE */\n\n  /* make sure textarea doesn't grow and stretch the enclosing bubble */\n  resize: none;\n  width: 225px;\n  max-width: 225px;\n  height: 35px;\n  max-height: 35px;\n}\n\ndiv.ExecutionVisualizer .annotationText,\ndiv.ExecutionVisualizer .vizDescriptionText {\n  font-family: verdana, arial, helvetica, sans-serif;\n  font-size: 11pt;\n  line-height: 1.5em;\n}\n\ndiv.ExecutionVisualizer .vizTitleText {\n  font-family: verdana, arial, helvetica, sans-serif;\n  font-size: 16pt;\n  margin-bottom: 12pt;\n}\n\ndiv.ExecutionVisualizer div#vizHeader {\n  margin-bottom: 10px;\n  width: 700px;\n  max-width: 700px;\n}\n\n/* prev then curr, so curr gets precedence when both apply */\ndiv.ExecutionVisualizer .highlight-prev {\n  background-color: #F0F0EA;\n}\n\ndiv.ExecutionVisualizer .highlight-cur {\n  background-color: #FFFF66;\n}\n\ndiv.ExecutionVisualizer .highlight-legend {\n  padding: 2px;\n}\n\n/* resizing sliders from David Pritchard */\n.ui-resizable-e {\n  background-color: #dddddd;\n  width: 1px;\n  border: 3px solid white;\n}\n\n.ui-resizable-e:hover {\n  border-color: #dddddd;\n}\n\ndiv.ExecutionVisualizer a,\ndiv.ExecutionVisualizer a:visited,\ndiv.ExecutionVisualizer a:hover {\n  color: #3D58A2;\n}\n\ndiv.ExecutionVisualizer div#rawUserInputDiv {\n  padding: 5px;\n  width: 95%;\n  margin: 5px auto;\n  text-align: center;\n  border: 1px #e93f34 solid;\n}\n\n/* for pyCrazyMode */\n\n/* prev then curr, so curr gets precedence when both apply */\ndiv.ExecutionVisualizer .pycrazy-highlight-prev {\n  background-color: #eeeeee; /*#F0F0EA;*/\n  /*\n  text-decoration: none;\n  border-bottom: 1px solid #dddddd;\n  */\n}\n\ndiv.ExecutionVisualizer .pycrazy-highlight-cur {\n  background-color: #FFFF66;\n  /* aligned slightly higher than border-bottom */\n  /*\n  text-decoration: none;\n  border-bottom: 1px solid #e93f34;\n  */\n}\n\ndiv.ExecutionVisualizer .pycrazy-highlight-prev-and-cur {\n  background-color: #FFFF66;\n\n  text-decoration: none;\n  border-bottom: 1px solid #999999;\n}\n\n\n#optTabularView thead.stepTableThead {\n  background-color: #bbb;\n}\n\n#optTabularView tbody.stepTableTbody {\n}\n\n#optTabularView td.stepTableTd {\n  padding: 3px 10px;\n}\n\n#uiControlsPane {\n  font-size: 8pt;\n}\n\n\n/* BEGIN Java frontend by David Pritchard and Will Gwozdz */\n\n/* stack and queue css by Will Gwozdz */\ndiv.ExecutionVisualizer table.queueTbl,\ndiv.ExecutionVisualizer table.stackTbl {\n  background-color: #ffffc6;\n}\n\ndiv.ExecutionVisualizer table.queueTbl,\ndiv.ExecutionVisualizer table.stackTbl {\n  border: 0px solid black;\n  border-spacing: 0px;\n}\n\ndiv.ExecutionVisualizer table.stackTbl td.stackElt,\ndiv.ExecutionVisualizer table.queueTbl td.queueElt {\n  padding-left: 8px;\n  padding-right: 8px;\n  padding-top: 2px;\n  padding-bottom: 3px;\n  border-top: 1px solid #555555;\n  border-bottom: 1px solid #555555;\n  border-left: 1px dashed #555555;\n}\n\ndiv.ExecutionVisualizer table.stackTbl td.stackFElt,\ndiv.ExecutionVisualizer table.queueTbl td.queueFElt {\n  background-color: white;\n  border-top: 1px solid #555555;\n  border-bottom: 1px solid #555555;\n}\n\ndiv.ExecutionVisualizer table.stackTbl td.stackLElt {\n  background-color: white;\n  border-left: 1px solid #555555;\n}\n\ndiv.ExecutionVisualizer table.queueTbl td.queueLElt {\n  background-color: white;\n  border-top: 1px solid#555555;\n  border-bottom: 1px solid #555555;\n  border-left: 1px dashed #555555;\n}\n\n/* This ensures a border is drawn around a dict\n   if its nested in another object. */\ndiv.ExecutionVisualizer td.stackElt table.dictTbl,\ndiv.ExecutionVisualizer td.stackLElt table.dictTbl,\ndiv.ExecutionVisualizer td.stackFElt table.dictTbl,\ndiv.ExecutionVisualizer td.queueElt table.dictTbl,\ndiv.ExecutionVisualizer td.queueLElt table.dictTbl,\ndiv.ExecutionVisualizer td.queueFElt table.dictTbl {\n  border: 1px #888 solid;\n}\n\n.symbolic {\n  font-size: 18pt;\n}\n\n/* END Java frontend by David Pritchard and Will Gwozdz */\n", ""]);
+exports.push([module.i, "/*\n\nOnline Python Tutor\nhttps://github.com/pgbovine/OnlinePythonTutor/\n\nCopyright (C) Philip J. Guo (philip@pgbovine.net)\n\nPermission is hereby granted, free of charge, to any person obtaining a\ncopy of this software and associated documentation files (the\n\"Software\"), to deal in the Software without restriction, including\nwithout limitation the rights to use, copy, modify, merge, publish,\ndistribute, sublicense, and/or sell copies of the Software, and to\npermit persons to whom the Software is furnished to do so, subject to\nthe following conditions:\n\nThe above copyright notice and this permission notice shall be included\nin all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS\nOR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF\nMERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.\nIN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY\nCLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,\nTORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE\nSOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n*/\n\n/* Most recent color scheme redesign on 2012-08-19 */\n\n/* To prevent CSS namespace clashes, prefix all rules with:\n     div.ExecutionVisualizer\n*/\n\n\n/* reset some styles to nullify effects of existing stylesheets\n   e.g., http://meyerweb.com/eric/tools/css/reset/\n*/\ndiv.ExecutionVisualizer {\n  /* none for now */\n}\n\ndiv.ExecutionVisualizer table.visualizer {\n  font-family: verdana, arial, helvetica, sans-serif;\n  font-size: 10pt;\n  margin-bottom: 10px;\n}\n\ndiv.ExecutionVisualizer table.visualizer td.vizLayoutTd {\n  vertical-align: top;\n}\n\ndiv.ExecutionVisualizer td#stack_td,\ndiv.ExecutionVisualizer td#heap_td {\n  vertical-align:top;\n  font-size: 10pt; /* don't make fonts in the heap so big! */\n}\n\ndiv.ExecutionVisualizer #dataViz {\n  /*margin-left: 25px;*/\n}\n\ndiv.ExecutionVisualizer #selectiveHideStatus {\n  /*margin-left: 25px;*/\n  font-size: 9pt;\n  margin-bottom: 15px;\n  margin-left: 13px;\n}\n\n/*\ndiv.ExecutionVisualizer div#codeDisplayDiv {\n  width: 550px;\n}\n*/\n\ndiv.ExecutionVisualizer div#pyCodeOutputDiv {\n  /*max-width: 550px;*/\n  max-height: 460px;\n  /*max-height: 620px;*/\n  overflow: auto;\n  /*margin-bottom: 4px;*/\n\n  margin-left: auto;\n  margin-right: auto;\n}\n\ndiv.ExecutionVisualizer table#pyCodeOutput {\n  font-family: Andale mono, monospace;\n  /*font-size:12pt;*/\n  font-size:11pt;\n  line-height:1.1em;\n\n  border-collapse: separate; /* some crazy CSS voodoo that needs to be\n                                there so that SVG arrows to the left\n                                of the code line up vertically in Chrome */\n  border-spacing: 0px;\n  border-top: 1px solid #bbb;\n  padding-top: 3px;\n  border-bottom: 1px solid #bbb;\n  /*margin-top: 6px;*/\n  margin: 6px auto; /* Center code in its pane */\n}\n\n/* don't wrap lines within code output ... FORCE scrollbars to appear */\ndiv.ExecutionVisualizer table#pyCodeOutput td {\n  white-space: nowrap;\n  vertical-align: middle; /* explicitly force, to override external CSS conflicts */\n}\n\ndiv.ExecutionVisualizer #leftCodeGutterSVG {\n  width: 18px;\n  min-width: 18px; /* make sure it doesn't squash too thin */\n  height: 0px; /* programmatically set this later ... IE needs this to\n                  be 0 or it defaults to something arbitrary and gross */\n}\n\ndiv.ExecutionVisualizer #prevLegendArrowSVG,\ndiv.ExecutionVisualizer #curLegendArrowSVG {\n  width: 18px;\n  height: 10px;\n}\n\ndiv.ExecutionVisualizer .arrow {\n  font-size: 16pt;\n}\n\ndiv.ExecutionVisualizer table#pyCodeOutput .lineNo {\n  color: #aaa;\n  padding: 0.2em;\n  padding-left: 0.3em;\n  padding-right: 0.5em;\n  text-align: right;\n}\n\ndiv.ExecutionVisualizer table#pyCodeOutput .cod {\n  /*font-weight: bold;*/\n  margin-left: 3px;\n  padding-left: 7px;\n  text-align: left; /* necessary or else doesn't work properly in IE */\n}\n\ndiv.ExecutionVisualizer div#progOutputs {\n  margin-left: 13px; /* line up with heap visualizations */\n  margin-bottom: 3px;\n}\n\ndiv.ExecutionVisualizer div#legendDiv {\n  padding: 0px;\n  text-align: left;\n  color: #666;\n  font-size: 9pt;\n}\n\ndiv.ExecutionVisualizer div#editCodeLinkDiv {\n  text-align: center;\n  /*\n  margin-top: 12px;\n  margin-bottom: 4px;\n  */\n  margin: 8px auto;\n  font-size: 11pt;\n}\n\ndiv.ExecutionVisualizer div#annotateLinkDiv {\n  /*text-align: left;*/\n  margin-top: 0px;\n  margin-bottom: 12px;\n  /*\n  margin-left: auto;\n  margin-right: auto;\n  */\n}\n\ndiv.ExecutionVisualizer div#stepAnnotationDiv {\n  margin-bottom: 12px;\n}\n\ndiv.ExecutionVisualizer textarea#stepAnnotationEditor,\ndiv.ExecutionVisualizer textarea#vizTitleEditor,\ndiv.ExecutionVisualizer textarea#vizDescriptionEditor {\n  border: 1px solid #999999;\n  padding: 4px;\n\n  overflow: auto; /* to look pretty on IE */\n  /* make sure textarea doesn't grow and stretch */\n  resize: none;\n}\n\n\ndiv.ExecutionVisualizer #errorOutput {\n  color: #e93f34; /* should match brightRed JavaScript variable */\n  font-size: 11pt;\n  padding-top: 2px;\n  line-height: 1.5em;\n  margin-bottom: 4px;\n}\n\n/* VCR control buttons for stepping through execution */\n\ndiv.ExecutionVisualizer #vcrControls {\n  margin-top: 15px;\n  margin-bottom: 6px;\n  /*width: 100%;*/\n  text-align: center;\n}\n\ndiv.ExecutionVisualizer #vcrControls button {\n  margin-left: 2px;\n  margin-right: 2px;\n}\n\ndiv.ExecutionVisualizer #curInstr {\n  text-align: center;\n}\n\ndiv.ExecutionVisualizer #pyStdout {\n  border: 1px solid #999999;\n  font-size: 10pt;\n  padding: 3px;\n  font-family: Andale mono, monospace;\n\n  overflow: auto; /* to look pretty on IE */\n  /* make sure textarea doesn't grow and stretch */\n  resize: none;\n}\n\n\ndiv.ExecutionVisualizer .vizFrame {\n  margin-bottom: 20px;\n  padding-left: 8px;\n  border-left: 2px solid #cccccc;\n}\n\n\n/* Rendering of primitive types */\n\ndiv.ExecutionVisualizer .importedObj {\n  font-size: 8pt;\n}\n\ndiv.ExecutionVisualizer .nullObj {\n/*  font-size: 8pt; */\n}\n\ndiv.ExecutionVisualizer .stringObj,\ndiv.ExecutionVisualizer .customObj,\ndiv.ExecutionVisualizer .funcObj {\n  font-family: Andale mono, monospace;\n  white-space: nowrap;\n}\n\ndiv.ExecutionVisualizer .funcCode {\n  font-size: 8pt;\n}\n\ndiv.ExecutionVisualizer .retval {\n  font-size: 9pt;\n}\n\ndiv.ExecutionVisualizer .stackFrame .retval {\n  color: #e93f34; /* highlight non-zombie stack frame return values -\n                     should match brightRed JavaScript variable */\n}\n\n/* Rendering of basic compound types */\n\ndiv.ExecutionVisualizer table.listTbl,\ndiv.ExecutionVisualizer table.tupleTbl,\ndiv.ExecutionVisualizer table.setTbl {\n  background-color: #ffffc6;\n}\n\n\ndiv.ExecutionVisualizer table.listTbl {\n  border: 0px solid black;\n  border-spacing: 0px;\n}\n\ndiv.ExecutionVisualizer table.listTbl td.listHeader,\ndiv.ExecutionVisualizer table.tupleTbl td.tupleHeader {\n  padding-left: 4px;\n  padding-top: 2px;\n  padding-bottom: 3px;\n  font-size: 8pt;\n  color: #777;\n  text-align: left;\n  border-left: 1px solid #555555;\n}\n\ndiv.ExecutionVisualizer table.tupleTbl {\n  border-spacing: 0px;\n  color: black;\n\n  border-bottom: 1px solid #555555; /* must match td.tupleHeader border */\n  border-top: 1px solid #555555; /* must match td.tupleHeader border */\n  border-right: 1px solid #555555; /* must match td.tupleHeader border */\n}\n\n\ndiv.ExecutionVisualizer table.listTbl td.listElt {\n  border-bottom: 1px solid #555555; /* must match td.listHeader border */\n  border-left: 1px solid #555555; /* must match td.listHeader border */\n}\n\n\n/* for C and C++ visualizations */\n\n/* make this slightly more compact than listTbl since arrays can be\n   rendered on the stack so we want to kinda conserve space */\ndiv.ExecutionVisualizer table.cArrayTbl {\n  background-color: #ffffc6;\n  padding-left: 0px;\n  padding-top: 0px;\n  padding-bottom: 0px;\n  font-size: 8pt;\n  color: #777;\n  text-align: left;\n  border: 0px solid black;\n  border-spacing: 0px;\n}\n\ndiv.ExecutionVisualizer table.cArrayTbl td.cArrayHeader {\n  padding-left: 5px;\n  padding-top: 0px;\n  padding-bottom: 2px;\n  font-size: 6pt;\n  color: #777;\n  text-align: left;\n  border-bottom: 0px solid black; /* override whatever we're nested in */\n}\n\ndiv.ExecutionVisualizer table.cArrayTbl td.cArrayElt {\n  border-bottom: 1px solid #888;\n  border-left: 1px solid #888;\n  border-top: 0px solid black;\n  color: black;\n\n  padding-top: 2px;\n  padding-bottom: 4px;\n  padding-left: 5px;\n  padding-right: 4px;\n  vertical-align: bottom;\n}\n\ndiv.ExecutionVisualizer table.cArrayTbl td.cMultidimArrayHeader {\n  padding-left: 5px;\n  padding-right: 5px;\n  padding-top: 1px;\n  padding-bottom: 3px;\n  font-size: 6pt;\n  color: #777;\n  text-align: left;\n  border-top: 1px solid #888;\n  border-left: 1px solid #888;\n  border-bottom: 0px solid black; /* override whatever we're nested in */\n}\n\ndiv.ExecutionVisualizer table.cArrayTbl td.cMultidimArrayElt {\n  border-left: 1px solid #888;\n  color: black;\n  padding-top: 1px;\n  padding-bottom: 4px;\n  padding-left: 5px;\n  padding-right: 5px;\n  vertical-align: bottom;\n}\n\n\ndiv.ExecutionVisualizer .cdataHeader {\n  font-size: 6pt;\n  color: #555;\n  padding-bottom: 2px;\n}\n\ndiv.ExecutionVisualizer .cdataElt {\n  font-size: 10pt;\n}\n\ndiv.ExecutionVisualizer .cdataUninit {\n  color: #888;\n}\n\n\ndiv.ExecutionVisualizer table.tupleTbl td.tupleElt {\n  border-left: 1px solid #555555; /* must match td.tupleHeader border */\n}\n\ndiv.ExecutionVisualizer table.customObjTbl {\n  background-color: white;\n  color: black;\n  border: 1px solid black;\n}\n\ndiv.ExecutionVisualizer table.customObjTbl td.customObjElt {\n  padding: 5px;\n  font-size: 9pt; /* make this smaller */\n}\n\ndiv.ExecutionVisualizer table.listTbl td.listElt,\ndiv.ExecutionVisualizer table.tupleTbl td.tupleElt {\n  padding-top: 0px;\n  padding-bottom: 8px;\n  padding-left: 10px;\n  padding-right: 10px;\n  vertical-align: bottom;\n}\n\ndiv.ExecutionVisualizer table.setTbl {\n  border: 1px solid #555555;\n  border-spacing: 0px;\n  text-align: center;\n}\n\ndiv.ExecutionVisualizer table.setTbl td.setElt {\n  padding: 8px;\n}\n\n\ndiv.ExecutionVisualizer table.dictTbl,\ndiv.ExecutionVisualizer table.instTbl,\ndiv.ExecutionVisualizer table.classTbl {\n  border-spacing: 1px;\n}\n\ndiv.ExecutionVisualizer table.dictTbl td.dictKey,\ndiv.ExecutionVisualizer table.instTbl td.instKey,\ndiv.ExecutionVisualizer table.classTbl td.classKey {\n  background-color: #faebbf;\n}\n\ndiv.ExecutionVisualizer table.dictTbl td.dictVal,\ndiv.ExecutionVisualizer table.instTbl td.instVal,\ndiv.ExecutionVisualizer table.classTbl td.classVal,\ndiv.ExecutionVisualizer td.funcCod {\n  background-color: #ffffc6;\n}\n\n\ndiv.ExecutionVisualizer table.dictTbl td.dictKey,\ndiv.ExecutionVisualizer table.instTbl td.instKey,\ndiv.ExecutionVisualizer table.classTbl td.classKey {\n  padding-top: 6px /*15px*/;\n  padding-bottom: 6px;\n  padding-left: 10px;\n  padding-right: 4px;\n\n  text-align: right;\n}\n\ndiv.ExecutionVisualizer table.dictTbl td.dictVal,\ndiv.ExecutionVisualizer table.instTbl td.instVal,\ndiv.ExecutionVisualizer table.classTbl td.classVal {\n  padding-top: 6px; /*15px*/;\n  padding-bottom: 6px;\n  padding-right: 10px;\n  padding-left: 4px;\n}\n\ndiv.ExecutionVisualizer td.funcCod {\n  padding-left: 4px;\n}\n\ndiv.ExecutionVisualizer table.classTbl td,\ndiv.ExecutionVisualizer table.instTbl td {\n  border-bottom: 1px #888 solid;\n}\n\ndiv.ExecutionVisualizer table.classTbl td.classVal,\ndiv.ExecutionVisualizer table.instTbl td.instVal {\n  border-left: 1px #888 solid;\n}\n\ndiv.ExecutionVisualizer table.classTbl,\ndiv.ExecutionVisualizer table.funcTbl {\n  border-collapse: collapse;\n  border: 1px #888 solid;\n}\n\n/* only add a border to dicts if they're embedded within another object */\ndiv.ExecutionVisualizer td.listElt table.dictTbl,\ndiv.ExecutionVisualizer td.tupleElt table.dictTbl,\ndiv.ExecutionVisualizer td.dictVal table.dictTbl,\ndiv.ExecutionVisualizer td.instVal table.dictTbl,\ndiv.ExecutionVisualizer td.classVal table.dictTbl {\n  border: 1px #888 solid;\n}\n\ndiv.ExecutionVisualizer .objectIdLabel {\n  font-size: 8pt;\n  color: #444;\n  margin-bottom: 2px;\n}\n\ndiv.ExecutionVisualizer .typeLabel {\n  font-size: 8pt;\n  color: #555;\n  margin-bottom: 2px;\n}\n\ndiv.ExecutionVisualizer div#stack,\ndiv.ExecutionVisualizer div#globals_area {\n  padding-left: 10px;\n  padding-right: 30px;\n\n  /* no longer necessary ... */\n  /*float: left;*/\n  /* border-right: 1px dashed #bbbbbb; */\n}\n\ndiv.ExecutionVisualizer div.stackFrame,\ndiv.ExecutionVisualizer div.zombieStackFrame {\n  background-color: #ffffff;\n  margin-bottom: 15px;\n  padding: 2px;\n  padding-left: 6px;\n  padding-right: 6px;\n  padding-bottom: 4px;\n  font-size: 10pt;\n}\n\ndiv.ExecutionVisualizer div.zombieStackFrame {\n  border-left: 1px dotted #aaa;\n  /*color: #c0c0c0;*/\n  color: #a0a0a0;\n}\n\ndiv.ExecutionVisualizer div.highlightedStackFrame {\n  background-color: #e2ebf6;\n  /*background-color: #d7e7fb;*/\n\n  /*background-color: #c0daf8;*/\n  /*background-color: #9eeaff #c5dfea;*/\n}\n\ndiv.ExecutionVisualizer div.stackFrame,\ndiv.ExecutionVisualizer div.highlightedStackFrame {\n  border-left: 1px solid #a6b3b6;\n}\n\n\ndiv.ExecutionVisualizer div.stackFrameHeader {\n  font-family: Andale mono, monospace;\n  font-size: 10pt;\n  margin-top: 4px;\n  margin-bottom: 3px;\n  white-space: nowrap;\n}\n\ndiv.ExecutionVisualizer td.stackFrameVar {\n  text-align: right;\n  padding-right: 8px;\n  padding-top: 3px;\n  padding-bottom: 3px;\n}\n\ndiv.ExecutionVisualizer td.stackFrameValue {\n  text-align: left;\n  border-bottom: 1px solid #aaaaaa;\n  border-left: 1px solid #aaaaaa;\n\n  vertical-align: middle;\n\n  padding-top: 3px;\n  padding-left: 3px;\n  padding-bottom: 3px;\n}\n\ndiv.ExecutionVisualizer .stackFrameVarTable tr {\n\n}\n\ndiv.ExecutionVisualizer .stackFrameVarTable {\n  text-align: right;\n  padding-top: 3px;\n\n  /* right-align the table */\n  margin-left: auto;\n  margin-right: 0px;\n\n  /* hack to counteract possible nasty CSS reset styles from parent divs */\n  border-collapse: separate;\n  border-spacing: 2px;\n}\n\ndiv.ExecutionVisualizer div#heap {\n  float: left;\n  padding-left: 30px;\n}\n\ndiv.ExecutionVisualizer td.toplevelHeapObject {\n  /* needed for d3 to do transitions */\n  padding-left: 8px;\n  padding-right: 8px;\n  padding-top: 4px;\n  padding-bottom: 4px;\n  /*\n  border: 2px dotted white;\n  border-color: white;\n  */\n}\n\ndiv.ExecutionVisualizer table.heapRow {\n  margin-bottom: 10px;\n}\n\ndiv.ExecutionVisualizer div.heapObject {\n  padding-left: 2px; /* leave a TINY amount of room for connector endpoints */\n}\n\ndiv.ExecutionVisualizer div.heapPrimitive {\n  padding-left: 4px; /* leave some more room for connector endpoints */\n}\n\ndiv.ExecutionVisualizer div#stackHeader {\n  margin-bottom: 15px;\n  text-align: right;\n}\n\ndiv.ExecutionVisualizer div#heapHeader {\n  /*margin-top: 2px;\n  margin-bottom: 13px;*/\n  margin-bottom: 15px;\n}\n\ndiv.ExecutionVisualizer div#langDisplayDiv {\n  text-align: center;\n  margin-top: 2pt;\n  margin-bottom: 3pt;\n}\n\ndiv.ExecutionVisualizer div#langDisplayDiv,\ndiv.ExecutionVisualizer div#stackHeader,\ndiv.ExecutionVisualizer div#heapHeader {\n  color: #333333;\n  font-size: 10pt;\n}\n\ndiv.ExecutionVisualizer #executionSlider {\n  /* if you set 'width', then it looks ugly when you dynamically resize */\n  margin-top: 15px;\n  margin-bottom: 5px;\n\n  /* DON'T center this, since we need breakpoints in executionSliderFooter to be well aligned */\n  width: 98%;\n}\n\ndiv.ExecutionVisualizer #executionSliderCaption {\n  font-size: 8pt;\n  color: #666666;\n  margin-top: 15px;\n}\n\ndiv.ExecutionVisualizer #executionSliderFooter {\n  margin-top: -7px; /* make it butt up against #executionSlider */\n}\n\ndiv.ExecutionVisualizer #codeFooterDocs,\ndiv.ExecutionVisualizer #printOutputDocs {\n  margin-bottom: 3px;\n  font-size: 8pt;\n  color: #666;\n}\n\ndiv.ExecutionVisualizer #codeFooterDocs {\n  margin-top: 5px;\n  margin-bottom: 12px;\n  width: 95%;\n}\n\n/* darken slider handle a bit */\ndiv.ExecutionVisualizer .ui-slider .ui-slider-handle {\n  border: 1px solid #999;\n}\n\n\n/* for annotation bubbles */\n\n/* For styling tricks, see: http://css-tricks.com/textarea-tricks/ */\ntextarea.bubbleInputText {\n  border: 1px solid #ccc;\n  outline: none;\n  overflow: auto; /* to look pretty on IE */\n\n  /* make sure textarea doesn't grow and stretch the enclosing bubble */\n  resize: none;\n  width: 225px;\n  max-width: 225px;\n  height: 35px;\n  max-height: 35px;\n}\n\ndiv.ExecutionVisualizer .annotationText,\ndiv.ExecutionVisualizer .vizDescriptionText {\n  font-family: verdana, arial, helvetica, sans-serif;\n  font-size: 11pt;\n  line-height: 1.5em;\n}\n\ndiv.ExecutionVisualizer .vizTitleText {\n  font-family: verdana, arial, helvetica, sans-serif;\n  font-size: 16pt;\n  margin-bottom: 12pt;\n}\n\ndiv.ExecutionVisualizer div#vizHeader {\n  margin-bottom: 10px;\n  width: 700px;\n  max-width: 700px;\n}\n\n/* prev then curr, so curr gets precedence when both apply */\ndiv.ExecutionVisualizer .highlight-prev {\n  background-color: #F0F0EA;\n}\n\ndiv.ExecutionVisualizer .highlight-cur {\n  background-color: #FFFF66;\n}\n\ndiv.ExecutionVisualizer .highlight-legend {\n  padding: 2px;\n}\n\n/* resizing sliders from David Pritchard */\n.ui-resizable-e {\n  background-color: #dddddd;\n  width: 1px;\n  border: 3px solid white;\n}\n\n.ui-resizable-e:hover {\n  border-color: #dddddd;\n}\n\ndiv.ExecutionVisualizer a,\ndiv.ExecutionVisualizer a:visited,\ndiv.ExecutionVisualizer a:hover {\n  color: #3D58A2;\n}\n\ndiv.ExecutionVisualizer div#rawUserInputDiv {\n  padding: 5px;\n  width: 95%;\n  margin: 5px auto;\n  text-align: center;\n  border: 1px #e93f34 solid;\n}\n\n/* for pyCrazyMode */\n\n/* prev then curr, so curr gets precedence when both apply */\ndiv.ExecutionVisualizer .pycrazy-highlight-prev {\n  background-color: #eeeeee; /*#F0F0EA;*/\n  /*\n  text-decoration: none;\n  border-bottom: 1px solid #dddddd;\n  */\n}\n\ndiv.ExecutionVisualizer .pycrazy-highlight-cur {\n  background-color: #FFFF66;\n  /* aligned slightly higher than border-bottom */\n  /*\n  text-decoration: none;\n  border-bottom: 1px solid #e93f34;\n  */\n}\n\ndiv.ExecutionVisualizer .pycrazy-highlight-prev-and-cur {\n  background-color: #FFFF66;\n\n  text-decoration: none;\n  border-bottom: 1px solid #999999;\n}\n\n\n#optTabularView thead.stepTableThead {\n  background-color: #bbb;\n}\n\n#optTabularView tbody.stepTableTbody {\n}\n\n#optTabularView td.stepTableTd {\n  padding: 3px 10px;\n}\n\n#uiControlsPane {\n  font-size: 8pt;\n}\n\n\n/* BEGIN Java frontend by David Pritchard and Will Gwozdz */\n\n/* stack and queue css by Will Gwozdz */\ndiv.ExecutionVisualizer table.queueTbl,\ndiv.ExecutionVisualizer table.stackTbl {\n  background-color: #ffffc6;\n}\n\ndiv.ExecutionVisualizer table.queueTbl,\ndiv.ExecutionVisualizer table.stackTbl {\n  border: 0px solid black;\n  border-spacing: 0px;\n}\n\ndiv.ExecutionVisualizer table.stackTbl td.stackElt,\ndiv.ExecutionVisualizer table.queueTbl td.queueElt {\n  padding-left: 8px;\n  padding-right: 8px;\n  padding-top: 2px;\n  padding-bottom: 3px;\n  border-top: 1px solid #555555;\n  border-bottom: 1px solid #555555;\n  border-left: 1px dashed #555555;\n}\n\ndiv.ExecutionVisualizer table.stackTbl td.stackFElt,\ndiv.ExecutionVisualizer table.queueTbl td.queueFElt {\n  background-color: white;\n  border-top: 1px solid #555555;\n  border-bottom: 1px solid #555555;\n}\n\ndiv.ExecutionVisualizer table.stackTbl td.stackLElt {\n  background-color: white;\n  border-left: 1px solid #555555;\n}\n\ndiv.ExecutionVisualizer table.queueTbl td.queueLElt {\n  background-color: white;\n  border-top: 1px solid#555555;\n  border-bottom: 1px solid #555555;\n  border-left: 1px dashed #555555;\n}\n\n/* This ensures a border is drawn around a dict\n   if its nested in another object. */\ndiv.ExecutionVisualizer td.stackElt table.dictTbl,\ndiv.ExecutionVisualizer td.stackLElt table.dictTbl,\ndiv.ExecutionVisualizer td.stackFElt table.dictTbl,\ndiv.ExecutionVisualizer td.queueElt table.dictTbl,\ndiv.ExecutionVisualizer td.queueLElt table.dictTbl,\ndiv.ExecutionVisualizer td.queueFElt table.dictTbl {\n  border: 1px #888 solid;\n}\n\n.symbolic {\n  font-size: 18pt;\n}\n\n/* END Java frontend by David Pritchard and Will Gwozdz */\n", ""]);
 
 // exports
 
@@ -22573,7 +22870,7 @@ var AbstractBaseFrontend = /** @class */ (function () {
         // so you will need to customize for your server:
         this.serverRoot = (window.location.protocol === 'https:') ?
             'https://cokapi.com/' : // my certificate for https is registered via cokapi.com, so use it for now
-            'http://cokapi.com/'; // try cokapi.com so that hopefully it works through firewalls better than directly using IP addr
+            'http://cokapi.com/'; // try cokapi.com so that hopefully it works through firewalls better than directly using its IP addr (which should be 104.237.139.253)
         // (but that's just an unsubstantiated hunch)
         // randomly pick one backup server to load balance:
         this.backupHttpServerRoot = (Math.random() >= 0.5) ? 'http://45.33.41.179/' : 'http://23.239.12.25/';
