@@ -1199,6 +1199,11 @@ class DataVisualizer {
   hideVarsSet: any;
   hideFieldsSet: any;
 
+  // temporary -- what has been hidden during a particular call to
+  // renderDataStructures? (reset during every call to renderDataStructures)
+  varsHidden: string[];
+  fieldsHidden: string[];
+
   static GLOBAL_PREFIX = 'global';
   static UNNAMED_PREFIX = '<unnamed>';
 
@@ -1656,7 +1661,7 @@ class DataVisualizer {
 
             var instKey = child[0];
             if (myViz.inHideFieldsSet(className, instKey)) {
-              console.log('precompute HIDING', className, instKey);
+              //console.log('precompute HIDING', className, instKey);
               return; // get out!
             }
             if (!myViz.isPrimitiveType(instKey)) {
@@ -1705,7 +1710,7 @@ class DataVisualizer {
               if (heapObj[0] == 'JS_FUNCTION') {
                 let instKey = kvPair[0];
                 if (myViz.inHideFieldsSet(funcName, instKey)) {
-                  console.log('precompute HIDING', funcName, instKey);
+                  //console.log('precompute HIDING', funcName, instKey);
                   return; // get out!
                 }
               }
@@ -1854,7 +1859,7 @@ class DataVisualizer {
               let structName = val[2] ? val[2] : DataVisualizer.UNNAMED_PREFIX;
               let fieldName = kvPair[0];
               if (myViz.inHideFieldsSet(structName, fieldName)) {
-                console.log('precompute HIDING', structName, fieldName);
+                //console.log('precompute HIDING', structName, fieldName);
                 return; // get out!
               }
             }
@@ -1867,7 +1872,7 @@ class DataVisualizer {
       // iterate through all globals and ordered stack frames and call updateCurLayout
       $.each(curEntry.ordered_globals, function(i, varname) {
         if (myViz.inHideVarsSet(DataVisualizer.GLOBAL_PREFIX, varname)) {
-          console.log('precompute HIDING', DataVisualizer.GLOBAL_PREFIX, varname);
+          //console.log('precompute HIDING', DataVisualizer.GLOBAL_PREFIX, varname);
           return; // get out!
         }
 
@@ -1891,7 +1896,7 @@ class DataVisualizer {
 
         $.each(frame.ordered_varnames, function(xxx, varname) {
           if (myViz.inHideVarsSet(func_prefix, varname)) {
-            console.log('precompute HIDING', func_prefix, varname);
+            //console.log('precompute HIDING', func_prefix, varname);
             return; // get out!
           }
 
@@ -2076,6 +2081,13 @@ class DataVisualizer {
     });
 
 
+    // what variables/fields were hidden in this call to renderDataStructures?
+    // (make these fields and not locals so that we can access them in
+    // other methods too, ergh)
+    myViz.varsHidden = [];
+    myViz.fieldsHidden = [];
+
+
     // Heap object rendering phase:
 
     // count everything in curToplevelLayout as already rendered since we will render them
@@ -2232,6 +2244,7 @@ class DataVisualizer {
     $.each(curEntry.ordered_globals, function(i, varname) {
       if (myViz.inHideVarsSet(DataVisualizer.GLOBAL_PREFIX, varname)) {
         console.log('render HIDING', DataVisualizer.GLOBAL_PREFIX, varname);
+        myViz.varsHidden.push(DataVisualizer.GLOBAL_PREFIX + ':' + varname);
         return; // get out!
       }
 
@@ -2473,8 +2486,9 @@ class DataVisualizer {
             let func_prefix = frame.func_name ? frame.func_name : DataVisualizer.UNNAMED_PREFIX;
 
             // a bit inefficient since we call filter twice, but whateves :)
-            let hiddenVars = frame.ordered_varnames.filter(varname => myViz.inHideVarsSet(func_prefix, varname));
-            console.log('render HIDE', func_prefix, hiddenVars);
+            let hiddenVarnamesLst = frame.ordered_varnames.filter(varname => myViz.inHideVarsSet(func_prefix, varname));
+            console.log('render HIDING', func_prefix, hiddenVarnamesLst);
+            hiddenVarnamesLst.forEach(e => {myViz.varsHidden.push(func_prefix + ':' + e);});
 
             return frame.ordered_varnames
                      .filter(varname => !myViz.inHideVarsSet(func_prefix, varname))
@@ -2948,6 +2962,26 @@ class DataVisualizer {
       }
     });
 
+
+    // show which variables/fields were actually hidden during this call
+    // to renderDataStructures:
+    if (myViz.owner.navControls.customizeVizOptionsShown) {
+      needToRedrawConnectors = true; // always redraw! TODO: will this get inefficient?!?
+
+      let shs = this.domRoot.find('#selectiveHideStatus');
+      shs.empty(); // ALWAYS start from scratch each time!
+
+      if (myViz.varsHidden.length > 0 || myViz.fieldsHidden.length > 0) {
+        // printing hidden vars/fields may move elements in the heap visualization
+        if (myViz.varsHidden.length > 0) {
+          shs.append("Hidden variables: " + varlistToHtml(myViz.varsHidden));
+        }
+        if (myViz.fieldsHidden.length > 0) {
+          shs.append("<br/>Hidden object fields: " + varlistToHtml(myViz.fieldsHidden));
+        }
+      }
+    }
+
     if (needToRedrawConnectors) {
       myViz.redrawConnectors();
     }
@@ -3303,6 +3337,7 @@ class DataVisualizer {
 
           if (myViz.inHideFieldsSet(className, kvPair[0])) {
             console.log('render HIDING', className, kvPair[0]);
+            myViz.fieldsHidden.push((className ? className + ':' : '') + kvPair[0]);
             return; // get out!
           }
 
@@ -3390,6 +3425,7 @@ class DataVisualizer {
               let instKey = kvPair[0];
               if (myViz.inHideFieldsSet(rawFuncName, kvPair[0])) {
                 console.log('render HIDING', rawFuncName, kvPair[0]);
+                myViz.fieldsHidden.push((rawFuncName ? rawFuncName + ':' : '') + kvPair[0]);
                 return; // get out!
               }
 
@@ -3471,6 +3507,7 @@ class DataVisualizer {
           let fieldName = kvPair[0];
           if (myViz.inHideFieldsSet(structName, fieldName)) {
             console.log('render HIDING', structName, fieldName);
+            myViz.fieldsHidden.push(structName + ':' + fieldName);
             return; // get out!
           }
 
@@ -3602,17 +3639,14 @@ class DataVisualizer {
   // which indicates a variable/field name that should be matched
   // regardless of what function/object it belongs to
   selectivelyHideVarsAndFields(hideVarsLst, hideFieldsLst) {
-    let shs = this.domRoot.find('#selectiveHideStatus');
-    shs.empty(); // start from scratch!
     if (hideVarsLst.length > 0) {
-      shs.append("Hiding variables: " + varlistToHtml(hideVarsLst));
       this.hideVarsSet = d3.map();
       hideVarsLst.forEach(e => this.hideVarsSet.set(e, true));
     } else {
       this.hideVarsSet = null; // reset
     }
+
     if (hideFieldsLst.length > 0) {
-      shs.append("<p/>Hiding object fields: " + varlistToHtml(hideFieldsLst));
       this.hideFieldsSet = d3.map();
       hideFieldsLst.forEach(e => this.hideFieldsSet.set(e, true));
     } else {
@@ -4201,10 +4235,11 @@ class NavigationController {
           <div class="sliderWrapper">Arrow length: <input type="range" min="1" max="30" value="10" class="jsplumbOptionSlider" id="arrowLength"><span class="sliderVal">10</span></div>\
           <div class="sliderWrapper">Arrow width: <input type="range" min="1" max="30" value="7" class="jsplumbOptionSlider" id="arrowWidth"><span class="sliderVal">7</span></div>\
           <div class="sliderWrapper">Arrow fold: <input type="range" min="0" max="1" value="0.55" step="0.05" class="jsplumbOptionSlider" id="arrowFoldback"><span class="sliderVal">0.55</span></div>\
-          <div id="selectiveHideDiv" style="margin-top: 15px; padding: 6px 6px 6px 6px; border: 1px solid black;">\
+          <div id="selectiveHideDiv" style="margin-top: 15px; padding: 6px 6px 6px 6px; border: 1px solid #ccc;">\
             <b>Hide variables/fields</b> (elements may end up out of order, so reload page to reset)<br/>\
             <button id="updateHideVarsBtn" style="margin-top: 8px;">Update visualization</button>\
-            <p/>All choices below; use part after colon to match all variables/fields with that name.\
+            <p/>All choices below; use part after colon to match all variables/fields with that name.<br/>\
+            <font color="#e93f34">(Double-check your spelling!)</font>\
             <p/>Hide these variables:<br/>\
             <textarea id="hideVars" rows="3" cols="70"/>\
             <div id="hideVarsChoices" style="width: 500px;"></div>\
@@ -4312,8 +4347,8 @@ class NavigationController {
       let varnameChoices = varlistToHtml(allVarnames);
       let fieldnameChoices = varlistToHtml(allFieldnames);
 
-      uiControlsPane.find('#hideVarsChoices').html(varnameChoices);
-      uiControlsPane.find('#hideFieldsChoices').html(fieldnameChoices);
+      uiControlsPane.find('#hideVarsChoices').html('<b><em>Choices:</em></b> ' + varnameChoices);
+      uiControlsPane.find('#hideFieldsChoices').html('<b><em>Choices:</em></b> ' + fieldnameChoices);
 
       uiControlsPane.find('#updateHideVarsBtn').click(() => {
         let hideVarsLst = processHideString(uiControlsPane.find('#hideVars').val());
