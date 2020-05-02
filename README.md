@@ -24,7 +24,7 @@ python bottle_server.py
 
 You should see the visualizer at: http://localhost:8003/visualize.html
 
-... and the live programming environment at: http://localhost:8003/live.html 
+... and the live programming environment at: http://localhost:8003/live.html
 
 However, it can be hard to run your own visualizer locally for
 non-Python languages, since there are complex dependencies in v4-cokapi/ that
@@ -36,6 +36,16 @@ Note: *I can't provide technical support for users who want to install Python Tu
 
 For further directions, see [Overview for Developers](v3/docs/developer-overview.md) or explore the [rest of the docs](v3/docs/).
 
+### Development
+
+### Setting up local dev env
+
+- Install [direnv](https://direnv.net/)
+- Install [pyenv](https://github.com/pyenv/pyenv)
+- `cd v5-unity`
+- `direnv allow`
+- `pip install -r requirements.txt`
+- `python bottle_server.py`
 
 ### Acknowledgments
 
