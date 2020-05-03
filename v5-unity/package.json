@@ -22,5 +22,22 @@
     "style-loader": "",
     "ts-loader": "^3.5.0",
     "url-loader": ""
+  },
+  "devDependencies": {
+    "@types/ace": "0.0.43",
+    "@types/d3": "^5.7.2",
+    "@types/diff-match-patch": "^1.0.32",
+    "@types/jquery": "^3.3.36",
+    "@types/jquery.bbq": "^1.2.30",
+    "@types/jquery.simplemodal": "^1.4.29",
+    "@types/jqueryui": "^1.12.10",
+    "@types/moment": "^2.13.0",
+    "@types/node": "^13.13.4",
+    "@types/qtip2": "^2.2.29",
+    "@types/requirejs": "^2.1.31",
+    "@types/socket.io-client": "^1.4.32",
+    "tsd": "^0.11.0",
+    "typescript": "^3.8.3",
+    "webpack": "^3.12.0"
   }
 }
